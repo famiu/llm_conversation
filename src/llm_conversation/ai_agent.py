@@ -51,7 +51,6 @@ class AIAgent:
         """Add a message to the end of the conversation history."""
         self._messages.append({"name": name, "role": role, "content": content})
 
-    # TODO: Make chat take the entire conversation history as input.
     def get_response(self) -> Iterator[str]:
         """Generate a response message based on the conversation history.
 
