@@ -34,15 +34,14 @@ pip install llm-conversation
 
 ### Command Line Arguments
 
-```bash
-llm-conversation [-h] [-o OUTPUT] [-c CONFIG]
+```txt
+llm-conversation [-h] [-V] [-o OUTPUT] [-c CONFIG]
 
 options:
-  -h, --help            Show this help message and exit
-  -o OUTPUT, --output OUTPUT
-                        Path to save the conversation log to
-  -c CONFIG, --config CONFIG
-                        Path to JSON configuration file
+  -h, --help           Show this help message and exit
+  -V, --version        Show program's version number and exit
+  -o, --output OUTPUT  Path to save the conversation log to
+  -c, --config CONFIG  Path to JSON configuration file
 ```
 
 ### Interactive Setup
