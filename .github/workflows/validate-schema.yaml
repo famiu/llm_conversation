@@ -10,7 +10,6 @@ on:
 
 jobs:
   validate-schema:
-    name: Check Schema Consistency
     runs-on: ubuntu-latest
 
     steps:

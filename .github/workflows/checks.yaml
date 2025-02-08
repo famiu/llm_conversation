@@ -10,7 +10,6 @@ on:
 
 jobs:
   check-code:
-    name: Check code formatting, lint code and do type-checking
     runs-on: ubuntu-latest
 
     steps:
