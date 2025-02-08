@@ -81,13 +81,13 @@
     "additionalProperties": false,
     "description": "Configuration for the AI agents and conversation settings.",
     "properties": {
-        "agent1": {
-            "$ref": "#/$defs/AgentConfig",
-            "description": "Configuration for the first AI agent"
-        },
-        "agent2": {
-            "$ref": "#/$defs/AgentConfig",
-            "description": "Configuration for the second AI agent"
+        "agents": {
+            "description": "Configuration for AI agents",
+            "items": {
+                "$ref": "#/$defs/AgentConfig"
+            },
+            "title": "Agents",
+            "type": "array"
         },
         "settings": {
             "$ref": "#/$defs/ConversationSettings",
@@ -95,8 +95,7 @@
         }
     },
     "required": [
-        "agent1",
-        "agent2",
+        "agents",
         "settings"
     ],
     "title": "Config",

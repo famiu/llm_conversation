@@ -47,16 +47,13 @@ class AIAgent:
         """Set the system prompt for the agent."""
         self._messages[0]["content"] = value
 
-    def add_message(self, role: str, content: str) -> None:
+    def add_message(self, name: str, role: str, content: str) -> None:
         """Add a message to the end of the conversation history."""
-        self._messages.append({"role": role, "content": content})
+        self._messages.append({"name": name, "role": role, "content": content})
 
     # TODO: Make chat take the entire conversation history as input.
-    def chat(self, user_input: str | None) -> Iterator[str]:
-        """Generate a response to the user input.
-
-        Note:
-            All chunks of the response must be consumed before calling this method again.
+    def get_response(self) -> Iterator[str]:
+        """Generate a response message based on the conversation history.
 
         Args:
             user_input (str | None): User input to the agent
@@ -64,10 +61,6 @@ class AIAgent:
         Yields:
             str: Chunk of the response from the agent
         """
-        # `None` user_input means the agent is starting the conversation or responding multiple times.
-        if user_input is not None:
-            self.add_message("user", user_input)
-
         response_stream = ollama.chat(  # pyright: ignore[reportUnknownMemberType]
             model=self.model,
             messages=self._messages,
@@ -83,5 +76,3 @@ class AIAgent:
             content: str = chunk["message"]["content"]
             chunks.append(content)
             yield content  # Stream chunks as they arrive
-
-        self.add_message("assistant", "".join(chunks).strip())

@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from importlib.metadata import version
 from pathlib import Path
 
+import distinctipy  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.validation import Validator
@@ -127,7 +128,7 @@ def markdown_to_text(markdown_content: str) -> Text:
 def display_message(
     console: Console,
     agent_name: str,
-    name_color: str,
+    name_color: tuple[int, int, int],
     message_stream: Iterator[str],
     use_markdown: bool = False,
 ) -> None:
@@ -141,7 +142,7 @@ def display_message(
         use_markdown (bool, optional): Whether to use Markdown for text formatting. Defaults to False.
     """
     # Create the agent name prefix as a Text object.
-    agent_prefix = Text.from_markup(f"[{name_color}]{agent_name}[/{name_color}]: ")
+    agent_prefix = Text(f"{agent_name}: ", style=f"rgb({name_color[0]},{name_color[1]},{name_color[2]})")
 
     content = ""
     with Live("", console=console, transient=False, refresh_per_second=10) as live:
@@ -149,6 +150,7 @@ def display_message(
             content += chunk
             # Create a group that holds both the agent prefix and the content.
             content_text = markdown_to_text(content) if use_markdown else Text(content)
+            content_text.style = "default"
             live.update(agent_prefix + content_text, refresh=True)
 
 
@@ -179,26 +181,43 @@ def main() -> None:
     _ = parser.add_argument("-c", "--config", type=Path, help="Path to JSON configuration file")
     args = parser.parse_args()
 
-    color1: str = "blue"
-    color2: str = "green"
-
     console = Console()
     console.clear()
+
+    if console.color_system != "truecolor":
+        console.print("Please run this program in a terminal with true color support.", style="bold red")
+        return
+
+    agents: list[AIAgent]
 
     if args.config:
         # Load from config file
         config = load_config(args.config)
-        agent1 = create_ai_agent_from_config(config.agent1)
-        agent2 = create_ai_agent_from_config(config.agent2)
+        agents = [create_ai_agent_from_config(agent_config) for agent_config in config.agents]
         settings = config.settings
         use_markdown = settings.use_markdown or False
         allow_termination = settings.allow_termination or False
         initial_message = settings.initial_message
     else:
-        agent1 = create_ai_agent_from_input(console, 1)
+        agent_count_str: str = (
+            prompt(
+                "Enter the number of AI agents (default: 2): ",
+                validator=Validator.from_callable(
+                    lambda text: text == "" or text.isdigit() and 1 < int(text) <= 10,
+                    error_message="Number of agents must be an integer greater than 1 and not more than 10",
+                    move_cursor_to_end=True,
+                ),
+            )
+            or "2"
+        )
         console.clear()
-        agent2 = create_ai_agent_from_input(console, 2)
-        console.clear()
+
+        agent_count: int = int(agent_count_str)
+        agents = []
+
+        for i in range(agent_count):
+            agents.append(create_ai_agent_from_input(console, i + 1))
+            console.clear()
 
         use_markdown = prompt_bool("Use Markdown for text formatting? (y/N): ", default=False)
         allow_termination = prompt_bool("Allow AI agents to terminate the conversation? (y/N): ", default=False)
@@ -207,12 +226,18 @@ def main() -> None:
         console.clear()
 
     manager = ConversationManager(
-        agent1=agent1,
-        agent2=agent2,
+        agents=agents,
         initial_message=initial_message,
         use_markdown=use_markdown,
         allow_termination=allow_termination,
     )
+
+    # Get distinct colors for each agent. distinctipy.get_colors() returns floats between 0 and 1, so convert to 0-255
+    # by multiplying by 255. This is necessary because Rich expects color values in the 0-255 range.
+    colors = distinctipy.get_colors(len(agents), pastel_factor=0.6)  # pyright: ignore[reportUnknownMemberType]
+    agent_name_color: dict[str, tuple[int, int, int]] = {
+        agent.name: (int(r * 255), int(g * 255), int(b * 255)) for agent, (r, g, b) in zip(agents, colors)
+    }
 
     console.print("=== Conversation Started ===\n", style="bold cyan")
     is_first_message = True
@@ -225,8 +250,7 @@ def main() -> None:
                 console.print("")
 
             is_first_message = False
-            color = color1 if agent_name == agent1.name else color2
-            display_message(console, agent_name, color, message, use_markdown)
+            display_message(console, agent_name, agent_name_color[agent_name], message, use_markdown)
 
     except KeyboardInterrupt:
         pass

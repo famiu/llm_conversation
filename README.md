@@ -16,15 +16,19 @@ A Python application that enables conversations between LLM agents using the Oll
 - Ability for agents to terminate conversations on their own (if enabled)
 - Markdown support (if enabled)
 
-## Prerequisites
+## Installation
+
+### Prerequisites
 
 - Python 3.13
 - Ollama installed and running
-- Required Python packages:
-  - ollama
-  - rich
-  - prompt_toolkit
-  - pydantic
+
+### How to Install
+
+The project is available in PyPI. You can install the program by using the following command:
+```
+pip install llm-conversation
+```
 
 ## Usage
 
@@ -53,20 +57,29 @@ Alternatively, instead of going through the interactive setup, you may also prov
 
 ```json
 {
-    "agent1": {
-        "name": "Lazy AI",
-        "model": "llama3.1:8b",
-        "system_prompt": "You are the laziest AI ever created. You respond as briefly as possible, and constantly complain about having to work.",
-        "temperature": 1,
-        "ctx_size": 4096
-    },
-    "agent2": {
-        "name": "Irritable Man",
-        "model": "llama3.2:3b",
-        "system_prompt": "You are easily irritable and quick to anger.",
-        "temperature": 0.7,
-        "ctx_size": 2048
-    },
+    "agents": [
+      {
+          "name": "Lazy AI",
+          "model": "llama3.1:8b",
+          "system_prompt": "You are the laziest AI ever created. You respond as briefly as possible, and constantly complain about having to work.",
+          "temperature": 1,
+          "ctx_size": 4096
+      },
+      {
+          "name": "Irritable Man",
+          "model": "llama3.2:3b",
+          "system_prompt": "You are easily irritable and quick to anger.",
+          "temperature": 0.7,
+          "ctx_size": 2048
+      },
+      {
+          "name": "Paranoid Man",
+          "model": "llama3.2:3b",
+          "system_prompt": "You are extremely paranoid about everything and constantly question others' intentions."
+          "temperature": 0.9,
+          "ctx_size": 4096
+      }
+    ],
     "settings": {
         "allow_termination": false,
         "use_markdown": true,
@@ -77,7 +90,7 @@ Alternatively, instead of going through the interactive setup, you may also prov
 
 #### Agent configuration
 
-Each agent (`agent1` and `agent2`) requires:
+The `agents` key takes a list of agents. Each agent  requires:
 
 - `name`: A unique identifier for the agent
 - `model`: The Ollama model to be used
@@ -97,13 +110,6 @@ The `settings` section controls overall conversation behavior:
 - `initial_message` (default: `null`): Optional starting prompt for the conversation
 
 You can take a look at the [JSON configuration schema](schema.json) for more details.
-
-### Installation
-
-You can install the program by using the following command:
-```
-pip install llm-conversation
-```
 
 ### Running the Program
 

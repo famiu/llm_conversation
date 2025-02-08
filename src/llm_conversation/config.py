@@ -58,8 +58,7 @@ class Config(BaseModel):
 
     model_config = ConfigDict(extra="forbid")  # pyright: ignore[reportUnannotatedClassAttribute]
 
-    agent1: AgentConfig = Field(..., description="Configuration for the first AI agent")
-    agent2: AgentConfig = Field(..., description="Configuration for the second AI agent")
+    agents: list[AgentConfig] = Field(..., description="Configuration for AI agents")
     settings: ConversationSettings = Field(..., description="Conversation settings")
 
 
