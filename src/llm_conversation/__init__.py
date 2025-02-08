@@ -138,20 +138,19 @@ def display_message(
         console (Console): Rich console instance.
         agent_name (str): Name of the agent.
         name_color (str): Color to use for the agent name.
-        message_stream (Iterator[str]): Stream of message chunks.
+        message_stream (Iterator[str]): Stream of the entire message up until the newest chunk received.
         use_markdown (bool, optional): Whether to use Markdown for text formatting. Defaults to False.
     """
     # Create the agent name prefix as a Text object.
     agent_prefix = Text(f"{agent_name}: ", style=f"rgb({name_color[0]},{name_color[1]},{name_color[2]})")
 
-    content = ""
-    with Live("", console=console, transient=False, refresh_per_second=10) as live:
-        for chunk in message_stream:
-            content += chunk
-            # Create a group that holds both the agent prefix and the content.
-            content_text = markdown_to_text(content) if use_markdown else Text(content)
-            content_text.style = "default"
-            live.update(agent_prefix + content_text, refresh=True)
+    with Live("", console=console, transient=False) as live:
+        for message in message_stream:
+            # If the message is in Markdown format, convert it to a styled Text object, so we can append the
+            # agent_prefix to it and display it through live.update().
+            message_text = markdown_to_text(message) if use_markdown else Text(message)
+            message_text.style = "default"
+            live.update(agent_prefix + message_text, refresh=True)
 
 
 def prompt_bool(prompt_text: str, default: bool = False) -> bool:
@@ -252,10 +251,10 @@ def main() -> None:
             is_first_message = False
             display_message(console, agent_name, agent_name_color[agent_name], message, use_markdown)
 
-    except KeyboardInterrupt:
-        pass
+        console.print("\n=== Conversation Terminated by Agent ===\n", style="bold cyan")
 
-    console.print("\n=== Conversation Ended ===\n", style="bold cyan")
+    except KeyboardInterrupt:
+        console.print("\n=== Conversation Terminated by User ===\n", style="bold cyan")
 
     if args.output is not None:
         manager.save_conversation(args.output)

@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 
 import ollama
+from pydantic import BaseModel
 
 
 class AIAgent:
@@ -51,7 +52,7 @@ class AIAgent:
         """Add a message to the end of the conversation history."""
         self._messages.append({"name": name, "role": role, "content": content})
 
-    def get_response(self) -> Iterator[str]:
+    def get_response(self, output_format: type[BaseModel]) -> Iterator[str]:
         """Generate a response message based on the conversation history.
 
         Args:
@@ -67,7 +68,8 @@ class AIAgent:
                 "num_ctx": self.ctx_size,
                 "temperature": self.temperature,
             },
-            stream=True,  # Enable streaming
+            stream=True,
+            format=output_format.model_json_schema(),
         )
 
         chunks: list[str] = []

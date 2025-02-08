@@ -1,9 +1,13 @@
 """Module for managing a conversation between AI agents."""
 
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict, cast
+
+from partial_json_parser import ensure_json  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
+from pydantic import BaseModel, Field, create_model
 
 from .ai_agent import AIAgent
 
@@ -22,9 +26,26 @@ class ConversationManager:
     allow_termination: bool = False
     _conversation_log: list[_ConversationLogItem] = field(default_factory=list, init=False)
     _original_system_prompts: list[str] = field(init=False)
+    _output_format: type[BaseModel] = field(init=False)
 
     def __post_init__(self) -> None:  # noqa: D105
         self._original_system_prompts = [agent.system_prompt for agent in self.agents]
+
+        output_format_kwargs: dict[str, Any] = {
+            "message": (str, Field(description="Message content")),
+        }
+
+        if self.allow_termination:
+            output_format_kwargs["terminate"] = (
+                bool,
+                Field(
+                    title="Terminate",
+                    description="Terminate conversation if you believe it has reached a natural conclusion. "
+                    + "Do not set this field to `true` unless you are certain the conversation should end.",
+                ),
+            )
+
+        self._output_format = create_model("OutputFormat", **output_format_kwargs)
 
         # Modify system prompt to include termination instructions if allowed
         additional_instructions: str = ""
@@ -33,14 +54,6 @@ class ConversationManager:
             additional_instructions += (
                 "You may use Markdown for text formatting. "
                 "Examples: *italic*, **bold**, `code`, [link](https://example.com), etc.\n\n"
-            )
-
-        # TODO: Use structured output instead of <TERMINATE> token.
-        if self.allow_termination:
-            additional_instructions += (
-                "You may terminate the conversation with the `<TERMINATE>` token "
-                "if you believe it has reached a natural conclusion. "
-                "Do not include the token in your message otherwise.\n\n"
             )
 
         # Updated system prompts for each agent. This gives the agents more context about the conversation and their
@@ -58,7 +71,7 @@ class ConversationManager:
                 + f"Always start your message with your name followed by a colon (e.g., '{agent.name}: Hello')\n\n"
                 + f"This is the prompt for your role: {agent.system_prompt}\n\n"
                 + additional_instructions
-            ).strip()
+            ).rstrip()
 
     # TODO: Support JSON output.
     def save_conversation(self, filename: Path) -> None:
@@ -88,69 +101,86 @@ class ConversationManager:
         """Generate an iterator of conversation responses.
 
         Yields:
-            (str, Iterator[str]): A tuple of the agent name and an iterator of response chunks.
+            (str, Iterator[str]): A tuple of the agent name and an iterator of the accumulated response.
+
+                                  Note: The iterator returns the entire message up until the newest chunk received,
+                                  not just the new chunk.
+
+                                  For example, if the first iteration yields "Hello, ", the second iteration will yield
+                                  "Hello, world!" instead of just "world!".
         """
-        full_message = self.initial_message
         turn_count = 0
 
-        def add_agent_message(agent_idx: int, message: str) -> None:
+        def add_agent_response(agent_idx: int, response: dict[str, Any]) -> None:
             """Add a message from an agent to the conversation log and the agents' message history.
 
             Args:
                 agent_idx (int): Index of the agent the message is from
                 message (str): Message content
             """
+            # The agents should get the full JSON response as context, to reinforce the response format and help them
+            # generate more coherent responses.
             for i, agent in enumerate(self.agents):
                 agent.add_message(
                     self.agents[agent_idx].name,
+                    # Use "assistant" instead of "user" for the agent's own messages.
                     "assistant" if i == agent_idx else "user",
-                    # The dialogue marker got stripped from the message, so add it back here.
-                    # This incentivizes the AI Agents to respond with the dialogue marker.
-                    f"{self.agents[agent_idx].name}: {message}",
+                    str(response),
                 )
 
+            # For the conversation log, only the message content is needed.
+            # Strip the dialogue marker from the message before adding it to the conversation log.
+            message: str = response["message"][len(self.agents[agent_idx].name) + 2 :]
             self._conversation_log.append({"agent": self.agents[agent_idx].name, "content": message})
 
         # If a non-empty initial message is provided, start with it.
         if self.initial_message is not None:
             # Make the first agent the one to say the initial message, and the second agent the one to respond.
-            add_agent_message(0, self.initial_message)
+            add_agent_response(0, {"message": self.initial_message})
             yield (self.agents[0].name, iter([self.initial_message]))
             turn_count += 1
 
         while True:
             agent_idx = turn_count % len(self.agents)
             current_agent = self.agents[agent_idx]
-            response_stream = current_agent.get_response()
-            message_chunks: list[str] = []
+            response_stream = current_agent.get_response(self._output_format)
+
+            # Will be populated with the full JSON response once the response stream is exhausted.
+            response_json: dict[str, Any] = {}
+
+            def parse_partial_json(json_string: str) -> dict[str, Any]:
+                """Parse a partial JSON response using the partial JSON parser, and return the JSON object."""
+                # Don't use `partial_json_parser.loads()` directly because it doesn't have good type hints.
+                return cast(dict[str, Any], json.loads(ensure_json(json_string)))
 
             def stream_chunks() -> Iterator[str]:
-                # Strip the dialogue marker from the message.
-                # Accumulate chunks until the full dialogue marker is found, then remove it and yield what's left of the
-                # accumulated message. Continue yielding the rest of the chunks as they arrive.
-                accumulated_message = ""
-                while True:
-                    chunk = next(response_stream)
-                    accumulated_message += chunk
+                nonlocal response_json
 
-                    if accumulated_message.startswith(f"{current_agent.name}: "):
-                        chunk = accumulated_message[len(current_agent.name) + 2 :]
-                        message_chunks.append(chunk)
-                        yield chunk
+                response: str = ""
+
+                # Accumulate chunks until the message field is found in the JSON response.
+                for response_chunk in response_stream:
+                    response += response_chunk
+                    response_json = parse_partial_json(response)
+
+                    if "message" in response_json:
                         break
 
-                for chunk in response_stream:
-                    message_chunks.append(chunk)
-                    yield chunk
+                # Message field is found, yield the entire message gradually as new chunks arrive.
+                for response_chunk in response_stream:
+                    response += response_chunk
+                    response_json = parse_partial_json(response)
+                    message: str = response_json["message"]
+
+                    # Yield the message with the dialogue marker stripped.
+                    yield message[len(current_agent.name) + 2 :]
 
             yield (current_agent.name, stream_chunks())
 
-            full_message = "".join(message_chunks).strip()
-            add_agent_message(agent_idx, full_message)
+            add_agent_response(agent_idx, response_json)
 
-            # Check for termination token.
-            # TODO: Filter out the `<TERMINATE>` token from the output to prevent it from displaying.
-            if self.allow_termination and "<TERMINATE>" in full_message:
+            # Check if the conversation should be terminated.
+            if response_json.get("terminate", False):
                 break
 
             turn_count += 1
