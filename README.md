@@ -139,6 +139,8 @@ When saving conversations, the output file includes:
 - Configuration details for both agents
 - Complete conversation history with agent names and messages
 
+Additionally, if the output file has a `.json` extension, the output will automatically have JSON format.
+
 ## Contributing
 
 Feel free to submit issues and pull requests for bug fixes or new features. Do keep in mind that this is a hobby project, so please have some patience.

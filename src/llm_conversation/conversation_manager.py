@@ -73,7 +73,6 @@ class ConversationManager:
                 + additional_instructions
             ).rstrip()
 
-    # TODO: Support JSON output.
     def save_conversation(self, filename: Path) -> None:
         """Save the conversation log to a file.
 
@@ -81,6 +80,32 @@ class ConversationManager:
             filename (Path): Path to save the conversation log to
         """
         with open(filename, "w", encoding="utf-8") as f:
+            if filename.suffix == ".json":
+
+                def agent_to_dict(agent_idx: int) -> dict[str, Any]:
+                    agent = self.agents[agent_idx]
+
+                    return {
+                        "name": agent.name,
+                        "model": agent.model,
+                        "temperature": agent.temperature,
+                        "ctx_size": agent.ctx_size,
+                        "system_prompt": self._original_system_prompts[agent_idx],
+                    }
+
+                # Save conversation log as JSON
+                json.dump(
+                    {
+                        "agents": [agent_to_dict(i) for i in range(len(self.agents))],
+                        "conversation": self._conversation_log,
+                    },
+                    f,
+                    ensure_ascii=False,
+                    indent=4,
+                )
+                return
+
+            # Save conversation log as plain text
             for i, agent in enumerate(self.agents, start=1):
                 _ = f.write(f"=== Agent {i} ===\n\n")
                 _ = f.write(f"Name: {agent.name}\n")

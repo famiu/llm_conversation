@@ -176,8 +176,14 @@ def main() -> None:
     """Run a conversation between AI agents."""
     parser = argparse.ArgumentParser(description="Run a conversation between AI agents")
     _ = parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {version('llm-conversation')}")
-    _ = parser.add_argument("-o", "--output", type=Path, help="Path to save the conversation log to")
-    _ = parser.add_argument("-c", "--config", type=Path, help="Path to JSON configuration file")
+    _ = parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="Save conversation log to file. Uses JSON format if file extension is .json, "
+        + "otherwise uses plain text format",
+    )
+    _ = parser.add_argument("-c", "--config", type=Path, help="Use JSON configuration file")
     args = parser.parse_args()
 
     console = Console()
