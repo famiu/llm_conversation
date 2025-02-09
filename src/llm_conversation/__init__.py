@@ -4,6 +4,7 @@ import argparse
 from collections.abc import Iterator
 from importlib.metadata import version
 from pathlib import Path
+from typing import cast
 
 import distinctipy  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
 from prompt_toolkit import prompt
@@ -16,7 +17,7 @@ from rich.text import Text
 
 from .ai_agent import AIAgent
 from .config import AgentConfig, get_available_models, load_config
-from .conversation_manager import ConversationManager
+from .conversation_manager import ConversationManager, TurnOrder
 
 
 def create_ai_agent_from_config(config: AgentConfig) -> AIAgent:
@@ -30,7 +31,7 @@ def create_ai_agent_from_config(config: AgentConfig) -> AIAgent:
     )
 
 
-def create_ai_agent_from_input(console: Console, agent_number: int) -> AIAgent:
+def create_ai_agent_from_input(console: Console, placeholder_name: str) -> AIAgent:
     """Create an AIAgent instance from user input.
 
     Args:
@@ -40,19 +41,18 @@ def create_ai_agent_from_input(console: Console, agent_number: int) -> AIAgent:
     Returns:
         AIAgent: Created AI agent instance.
     """
-    console.print(f"=== Creating AI Agent {agent_number} ===", style="bold cyan")
+    console.print(f'=== Creating AI Agent: "{placeholder_name}" ===\n', style="bold cyan")
 
     available_models = get_available_models()
-    console.print("\nAvailable Models:", style="bold")
+    console.print("Available Models:", style="bold")
     for model in available_models:
         console.print(Text("• " + model))
     console.print("")
 
-    model_completer = WordCompleter(available_models, ignore_case=True)
     model_name = (
         prompt(
             f"Enter model name (default: {available_models[0]}): ",
-            completer=model_completer,
+            completer=WordCompleter(available_models, ignore_case=True),
             complete_while_typing=True,
             validator=Validator.from_callable(
                 lambda text: text == "" or text in available_models,
@@ -100,7 +100,7 @@ def create_ai_agent_from_input(console: Console, agent_number: int) -> AIAgent:
     )
     ctx_size: int = int(ctx_size_str)
 
-    name = prompt(f"Enter name (default: AI {agent_number}): ") or f"AI {agent_number}"
+    name = prompt(f"Enter name (default: {placeholder_name}): ") or placeholder_name
     system_prompt = prompt(f"Enter system prompt for {name}: ")
 
     return AIAgent(
@@ -194,6 +194,8 @@ def main() -> None:
         return
 
     agents: list[AIAgent]
+    turn_order: TurnOrder
+    moderator: AIAgent | None = None
 
     if args.config:
         # Load from config file
@@ -203,6 +205,8 @@ def main() -> None:
         use_markdown = settings.use_markdown or False
         allow_termination = settings.allow_termination or False
         initial_message = settings.initial_message
+        turn_order = settings.turn_order
+        moderator = create_ai_agent_from_config(settings.moderator) if settings.moderator else None
     else:
         agent_count_str: str = (
             prompt(
@@ -221,12 +225,31 @@ def main() -> None:
         agents = []
 
         for i in range(agent_count):
-            agents.append(create_ai_agent_from_input(console, i + 1))
+            agents.append(create_ai_agent_from_input(console, f"AI {i + 1}"))
             console.clear()
 
         use_markdown = prompt_bool("Use Markdown for text formatting? (y/N): ", default=False)
         allow_termination = prompt_bool("Allow AI agents to terminate the conversation? (y/N): ", default=False)
         initial_message = prompt("Enter initial message (can be empty): ") or None
+
+        turn_order_values = ["round_robin", "random", "moderator", "vote"]
+        turn_order = cast(
+            TurnOrder,
+            prompt(
+                "Enter turn order (default: round_robin): ",
+                completer=WordCompleter(turn_order_values, ignore_case=True),
+                validator=Validator.from_callable(
+                    lambda text: text == "" or text in turn_order_values,
+                    error_message="Invalid turn order",
+                    move_cursor_to_end=True,
+                ),
+            )
+            or "round_robin",
+        )
+
+        if turn_order == "moderator" and prompt_bool("Configure the moderator agent? (y/N): ", default=False):
+            console.clear()
+            moderator = create_ai_agent_from_input(console, "Moderator")
 
         console.clear()
 
@@ -235,6 +258,8 @@ def main() -> None:
         initial_message=initial_message,
         use_markdown=use_markdown,
         allow_termination=allow_termination,
+        turn_order=turn_order,
+        moderator=moderator,
     )
 
     # Get distinct colors for each agent. distinctipy.get_colors() returns floats between 0 and 1, so convert to 0-255

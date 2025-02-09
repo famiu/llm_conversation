@@ -72,6 +72,30 @@
                     "default": null,
                     "description": "Initial message to start the conversation",
                     "title": "Initial Message"
+                },
+                "turn_order": {
+                    "default": "round_robin",
+                    "description": "Strategy for selecting the next agent",
+                    "enum": [
+                        "round_robin",
+                        "random",
+                        "moderator",
+                        "vote"
+                    ],
+                    "title": "Turn Order",
+                    "type": "string"
+                },
+                "moderator": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/AgentConfig"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "description": "Configuration for the moderator agent (if using \"moderator\" turn order)"
                 }
             },
             "title": "ConversationSettings",

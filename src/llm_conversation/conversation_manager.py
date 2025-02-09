@@ -1,15 +1,20 @@
 """Module for managing a conversation between AI agents."""
 
+import enum
 import json
+import random
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 
+import ollama
 from partial_json_parser import ensure_json  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
 from pydantic import BaseModel, Field, create_model
 
 from .ai_agent import AIAgent
+
+TurnOrder = Literal["round_robin", "random", "moderator", "vote"]
 
 
 @dataclass
@@ -24,11 +29,21 @@ class ConversationManager:
     initial_message: str | None
     use_markdown: bool = False
     allow_termination: bool = False
+    turn_order: TurnOrder = "round_robin"
+    moderator: AIAgent | None = None
     _conversation_log: list[_ConversationLogItem] = field(default_factory=list, init=False)
-    _original_system_prompts: list[str] = field(init=False)
-    _output_format: type[BaseModel] = field(init=False)
+    _original_system_prompts: list[str] = field(init=False, repr=False)
+    _output_format: type[BaseModel] = field(init=False, repr=False)
+    _agent_name_to_idx: dict[str, int] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:  # noqa: D105
+        self._agent_name_to_idx = {}
+
+        for i, agent in enumerate(self.agents):
+            if agent.name in self._agent_name_to_idx:
+                raise ValueError(f"Agent names must be unique: {agent.name}")
+            self._agent_name_to_idx[agent.name] = i
+
         self._original_system_prompts = [agent.system_prompt for agent in self.agents]
 
         output_format_kwargs: dict[str, Any] = {
@@ -72,6 +87,12 @@ class ConversationManager:
                 + f"This is the prompt for your role: {agent.system_prompt}\n\n"
                 + additional_instructions
             ).rstrip()
+
+        # If the turn order is set to "moderator" and a moderator agent is not provided, create one.
+        if self.turn_order == "moderator" and self.moderator is None:
+            self._create_moderator_agent()
+        elif self.turn_order != "moderator" and self.moderator is not None:
+            raise ValueError("Cannot use a moderator agent without the turn order set to 'moderator'")
 
     def save_conversation(self, filename: Path) -> None:
         """Save the conversation log to a file.
@@ -134,7 +155,6 @@ class ConversationManager:
                                   For example, if the first iteration yields "Hello, ", the second iteration will yield
                                   "Hello, world!" instead of just "world!".
         """
-        turn_count = 0
 
         def add_agent_response(agent_idx: int, response: dict[str, Any]) -> None:
             """Add a message from an agent to the conversation log and the agents' message history.
@@ -153,20 +173,26 @@ class ConversationManager:
                     str(response),
                 )
 
-            # For the conversation log, only the message content is needed.
+            # For the moderator and for conversation log, only the message content is needed.
             # Strip the dialogue marker from the message before adding it to the conversation log.
             message: str = response["message"][len(self.agents[agent_idx].name) + 2 :]
+
+            # If a moderator agent is present, add the message to the moderator's message history.
+            if self.moderator is not None:
+                self.moderator.add_message(self.agents[agent_idx].name, "user", message)
+
             self._conversation_log.append({"agent": self.agents[agent_idx].name, "content": message})
+
+        agent_idx: int = self._pick_next_agent(None)
 
         # If a non-empty initial message is provided, start with it.
         if self.initial_message is not None:
             # Make the first agent the one to say the initial message, and the second agent the one to respond.
-            add_agent_response(0, {"message": self.initial_message})
-            yield (self.agents[0].name, iter([self.initial_message]))
-            turn_count += 1
+            add_agent_response(agent_idx, {"message": self.initial_message})
+            yield (self.agents[agent_idx].name, iter([self.initial_message]))
+            agent_idx = self._pick_next_agent(agent_idx)
 
         while True:
-            agent_idx = turn_count % len(self.agents)
             current_agent = self.agents[agent_idx]
             response_stream = current_agent.get_response(self._output_format)
 
@@ -208,4 +234,121 @@ class ConversationManager:
             if response_json.get("terminate", False):
                 break
 
-            turn_count += 1
+            agent_idx = self._pick_next_agent(agent_idx)
+
+    def _create_moderator_agent(self) -> None:
+        def model_param_to_int(model_param: str) -> int:
+            suffixes = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000, "T": 1_000_000_000_000}
+
+            try:
+                if model_param[-1] in suffixes:
+                    return int(float(model_param[:-1]) * suffixes[model_param[-1]])
+                else:
+                    return int(float(model_param))
+            except ValueError:
+                raise ValueError(f"Unknown model parameter size: {model_param}") from None
+
+        moderator_agent_model: str | None = None
+        moderator_agent_ctx_size: int | None = None
+        lowest_param_count: int | None = None
+
+        # Find the model with the lowest parameter count to use as the moderator agent.
+        # Also use the highest context size among the agents.
+        for agent in self.agents:
+            model_details = ollama.show(agent.model).details
+            assert model_details is not None
+            model_params_str = model_details.parameter_size
+            assert model_params_str is not None
+            model_params: int = model_param_to_int(model_params_str)
+
+            if lowest_param_count is None or model_params < lowest_param_count:
+                moderator_agent_model = agent.model
+                lowest_param_count = model_params
+
+            if moderator_agent_ctx_size is None or agent.ctx_size > moderator_agent_ctx_size:
+                moderator_agent_ctx_size = agent.ctx_size
+
+        assert moderator_agent_model is not None and moderator_agent_ctx_size is not None
+
+        self.moderator = AIAgent(
+            name="Moderator",
+            model=moderator_agent_model,
+            temperature=0.8,
+            ctx_size=moderator_agent_ctx_size,
+            system_prompt="You are the conversation moderator. Your task is to analyze the conversation "
+            + "and choose who speaks next. You should prioritize giving each agent an equal opportunity to speak. "
+            + "Most importantly, you should prioritize keeping the conversation entertaining and engaging.",
+        )
+
+    def _pick_next_agent(self, current_agent_idx: int | None) -> int:
+        """Pick the next agent to speak based on the turn order.
+
+        The different turn order strategies are as follows:
+        - "round_robin": Cycle through the agents in order.
+        - "random": Randomly pick an agent to speak next.
+        - "moderator": A moderator agent picks the next agent to speak.
+        - "vote": Each agent votes for the next agent to speak, and the agent with the most votes is chosen.
+                  In case of a tie, one of the tied agents is chosen randomly.
+
+        Args:
+            current_agent_idx (int | None): Index of the agent that just spoke. Should be None if no agent has spoken
+                                            yet.
+
+        Returns:
+            int: Index of the agent to speak next
+        """
+        # Only two agents, so the next agent is the other one.
+        if len(self.agents) == 2:
+            return 1 if current_agent_idx == 0 else 0
+
+        def choice_enum(ignore_idx: list[int]) -> enum.Enum:
+            choices_dict: dict[str, str] = {}
+
+            choices_dict = {agent.name: agent.name for i, agent in enumerate(self.agents) if i not in ignore_idx}
+
+            return enum.Enum("NextAgentChoices", choices_dict)  # pyright: ignore[reportReturnType]
+
+        match self.turn_order:
+            case "random":
+                if current_agent_idx is None:
+                    return random.randint(0, len(self.agents) - 1)
+
+                idx = random.randint(0, len(self.agents) - 2)
+                return idx if idx < current_agent_idx else idx + 1
+            case "round_robin":
+                return (current_agent_idx + 1) % len(self.agents) if current_agent_idx is not None else 0
+            case "moderator":
+                assert self.moderator is not None
+                agent_choices_enum = choice_enum([current_agent_idx] if current_agent_idx is not None else [])
+
+                moderator_output_format: type[BaseModel] = create_model(
+                    "ModeratorOutputFormat",
+                    next_agent=(agent_choices_enum, Field(description="Name of the next agent to speak")),
+                )
+
+                moderator_response = "".join(list(self.moderator.get_response(moderator_output_format)))
+                next_agent_name = json.loads(moderator_response)["next_agent"]
+
+                return self._agent_name_to_idx[next_agent_name]
+            case "vote":
+                agent_votes: dict[str, int] = {agent.name: 0 for agent in self.agents}
+
+                for i, agent in enumerate(self.agents):
+                    agent_choices_enum = choice_enum([i] if current_agent_idx is None else [current_agent_idx, i])
+
+                    vote_output_structure: type[BaseModel] = create_model(
+                        "VoteOutput",
+                        next_agent=(agent_choices_enum, Field(description="Name of the next agent to speak")),
+                    )
+
+                    response = "".join(list(agent.get_response(vote_output_structure)))
+                    agent_name = json.loads(response)["next_agent"]
+
+                    assert agent_name in agent_votes, f"Invalid agent name: {agent_name}"
+                    agent_votes[agent_name] += 1
+
+                # Find the agents with the most votes and pick one of them randomly.
+                max_votes = max(agent_votes.values())
+                agents_with_max_votes = [agent_name for agent_name, votes in agent_votes.items() if votes == max_votes]
+
+                return self._agent_name_to_idx[random.choice(agents_with_max_votes)]

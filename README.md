@@ -82,7 +82,8 @@ Alternatively, instead of going through the interactive setup, you may also prov
     "settings": {
         "allow_termination": false,
         "use_markdown": true,
-        "initial_message": "*yawn* What do you want?"
+        "initial_message": "Why is the sky blue?",
+        "turn_order": "vote"
     }
 }
 ```
@@ -101,12 +102,19 @@ Optional parameters:
   - Higher values increase creativity
 - `ctx_size` (default: 2048): Maximum context length for the conversation
 
+Additionally, agent names must be unique.
+
 #### Conversation Settings
 
 The `settings` section controls overall conversation behavior:
-- `allow_termination` (default: `false`): Permit agents to end the conversation
-- `use_markdown` (default: `false`): Enable Markdown text formatting
-- `initial_message` (default: `null`): Optional starting prompt for the conversation
+- `allow_termination` (`boolean`, default: `false`): Permit agents to end the conversation
+- `use_markdown` (`boolean`, default: `false`): Enable Markdown text formatting
+- `initial_message` (`string | null`, default: `null`): Optional starting prompt for the conversation
+- `turn_order` (`"round_robin" | "random" | "moderator" | "vote"`, default: `"round_robin"`): Strategy for agent turn order
+  - `"round_robin"`: Agents are cycled through in order
+  - `"random"`: An agent other than the current one is randomly chosen
+  - `"moderator"`: A special moderator agent is designated to choose which agent speaks next. You may specify the moderator agent manually with the optional `moderator` key. If moderator isn't manually specified, one is created by the program instead based on other configuration options. Note that this method might be quite slow.
+  - `"vote"`: All agents are made to vote for an agent except the current one and themselves. Of the agents with the most amount of votes, one is randomly chosen. This is the slowest method of determining turn order.
 
 You can take a look at the [JSON configuration schema](schema.json) for more details.
 

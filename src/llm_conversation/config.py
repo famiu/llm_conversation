@@ -6,9 +6,12 @@ configuration from a JSON file.
 
 import json
 from pathlib import Path
+from typing import Self
 
 import ollama
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .conversation_manager import TurnOrder
 
 
 def get_available_models() -> list[str]:
@@ -51,6 +54,17 @@ class ConversationSettings(BaseModel):
     use_markdown: bool = Field(default=False, description="Enable Markdown formatting")
     allow_termination: bool = Field(default=False, description="Allow AI agents to terminate the conversation")
     initial_message: str | None = Field(default=None, description="Initial message to start the conversation")
+    turn_order: TurnOrder = Field(default="round_robin", description="Strategy for selecting the next agent")
+    moderator: AgentConfig | None = Field(
+        default=None, description='Configuration for the moderator agent (if using "moderator" turn order)'
+    )
+
+    @model_validator(mode="after")
+    def validate_moderator(self) -> Self:  # noqa: D102
+        if self.turn_order != "moderator" and self.moderator is not None:
+            raise ValueError("moderator can only be defined when turn_order is 'moderator'")
+
+        return self
 
 
 class Config(BaseModel):
