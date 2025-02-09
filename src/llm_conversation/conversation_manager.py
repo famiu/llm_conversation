@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
-import ollama
 from partial_json_parser import ensure_json  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
 from pydantic import BaseModel, Field, create_model
 
@@ -237,17 +236,6 @@ class ConversationManager:
             agent_idx = self._pick_next_agent(agent_idx)
 
     def _create_moderator_agent(self) -> None:
-        def model_param_to_int(model_param: str) -> int:
-            suffixes = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000, "T": 1_000_000_000_000}
-
-            try:
-                if model_param[-1] in suffixes:
-                    return int(float(model_param[:-1]) * suffixes[model_param[-1]])
-                else:
-                    return int(float(model_param))
-            except ValueError:
-                raise ValueError(f"Unknown model parameter size: {model_param}") from None
-
         moderator_agent_model: str | None = None
         moderator_agent_ctx_size: int | None = None
         lowest_param_count: int | None = None
@@ -255,15 +243,11 @@ class ConversationManager:
         # Find the model with the lowest parameter count to use as the moderator agent.
         # Also use the highest context size among the agents.
         for agent in self.agents:
-            model_details = ollama.show(agent.model).details
-            assert model_details is not None
-            model_params_str = model_details.parameter_size
-            assert model_params_str is not None
-            model_params: int = model_param_to_int(model_params_str)
+            model_param_count: int = agent.get_param_count()
 
-            if lowest_param_count is None or model_params < lowest_param_count:
+            if lowest_param_count is None or model_param_count < lowest_param_count:
                 moderator_agent_model = agent.model
-                lowest_param_count = model_params
+                lowest_param_count = model_param_count
 
             if moderator_agent_ctx_size is None or agent.ctx_size > moderator_agent_ctx_size:
                 moderator_agent_ctx_size = agent.ctx_size

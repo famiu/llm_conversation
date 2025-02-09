@@ -1,6 +1,7 @@
 """Module for the AIAgent class."""
 
 from collections.abc import Iterator
+from typing import Any, cast
 
 import ollama
 from pydantic import BaseModel
@@ -77,3 +78,7 @@ class AIAgent:
             content: str = chunk["message"]["content"]
             chunks.append(content)
             yield content  # Stream chunks as they arrive
+
+    def get_param_count(self) -> int:
+        """Get the number of parameters in the model."""
+        return cast(int, cast(dict[str, Any], ollama.show(self.model).modelinfo)["general.parameter_count"])
