@@ -79,6 +79,7 @@
                     "enum": [
                         "round_robin",
                         "random",
+                        "chain",
                         "moderator",
                         "vote"
                     ],

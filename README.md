@@ -110,9 +110,10 @@ The `settings` section controls overall conversation behavior:
 - `allow_termination` (`boolean`, default: `false`): Permit agents to end the conversation
 - `use_markdown` (`boolean`, default: `false`): Enable Markdown text formatting
 - `initial_message` (`string | null`, default: `null`): Optional starting prompt for the conversation
-- `turn_order` (`"round_robin" | "random" | "moderator" | "vote"`, default: `"round_robin"`): Strategy for agent turn order
+- `turn_order` (default: `"round_robin"`): Strategy for agent turn order. Can be one of:
   - `"round_robin"`: Agents are cycled through in order
   - `"random"`: An agent other than the current one is randomly chosen
+  - `"chain"`: Current agent picks which agent speaks next
   - `"moderator"`: A special moderator agent is designated to choose which agent speaks next. You may specify the moderator agent manually with the optional `moderator` key. If moderator isn't manually specified, one is created by the program instead based on other configuration options. Note that this method might be quite slow.
   - `"vote"`: All agents are made to vote for an agent except the current one and themselves. Of the agents with the most amount of votes, one is randomly chosen. This is the slowest method of determining turn order.
 

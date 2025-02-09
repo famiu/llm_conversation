@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, create_model
 
 from .ai_agent import AIAgent
 
-TurnOrder = Literal["round_robin", "random", "moderator", "vote"]
+TurnOrder = Literal["round_robin", "random", "chain", "moderator", "vote"]
 
 
 @dataclass
@@ -286,6 +286,7 @@ class ConversationManager:
         The different turn order strategies are as follows:
         - "round_robin": Cycle through the agents in order.
         - "random": Randomly pick an agent to speak next.
+        - "chain": The agent that just spoke picks the next agent to speak.
         - "moderator": A moderator agent picks the next agent to speak.
         - "vote": Each agent votes for the next agent to speak, and the agent with the most votes is chosen.
                   In case of a tie, one of the tied agents is chosen randomly.
@@ -309,14 +310,30 @@ class ConversationManager:
             return enum.Enum("NextAgentChoices", choices_dict)  # pyright: ignore[reportReturnType]
 
         match self.turn_order:
+            case "round_robin":
+                return (current_agent_idx + 1) % len(self.agents) if current_agent_idx is not None else 0
             case "random":
                 if current_agent_idx is None:
                     return random.randint(0, len(self.agents) - 1)
 
                 idx = random.randint(0, len(self.agents) - 2)
                 return idx if idx < current_agent_idx else idx + 1
-            case "round_robin":
-                return (current_agent_idx + 1) % len(self.agents) if current_agent_idx is not None else 0
+            case "chain":
+                if current_agent_idx is None:
+                    # No agent has spoken yet, so pick a random agent to start the conversation.
+                    return random.randint(0, len(self.agents) - 1)
+
+                agent_choices_enum = choice_enum([current_agent_idx])
+
+                chain_output_format: type[BaseModel] = create_model(
+                    "ChainOutputFormat",
+                    next_agent=(agent_choices_enum, Field(description="Name of the next agent to speak")),
+                )
+
+                response = "".join(list(self.agents[current_agent_idx].get_response(chain_output_format)))
+                next_agent_name = json.loads(response)["next_agent"]
+
+                return self._agent_name_to_idx[next_agent_name]
             case "moderator":
                 assert self.moderator is not None
                 agent_choices_enum = choice_enum([current_agent_idx] if current_agent_idx is not None else [])
@@ -336,12 +353,12 @@ class ConversationManager:
                 for i, agent in enumerate(self.agents):
                     agent_choices_enum = choice_enum([i] if current_agent_idx is None else [current_agent_idx, i])
 
-                    vote_output_structure: type[BaseModel] = create_model(
-                        "VoteOutput",
+                    vote_output_format: type[BaseModel] = create_model(
+                        "VoteOutputFormat",
                         next_agent=(agent_choices_enum, Field(description="Name of the next agent to speak")),
                     )
 
-                    response = "".join(list(agent.get_response(vote_output_structure)))
+                    response = "".join(list(agent.get_response(vote_output_format)))
                     agent_name = json.loads(response)["next_agent"]
 
                     assert agent_name in agent_votes, f"Invalid agent name: {agent_name}"

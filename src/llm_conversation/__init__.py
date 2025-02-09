@@ -1,10 +1,10 @@
 """Main module for LLM Conversation package."""
 
 import argparse
+import typing
 from collections.abc import Iterator
 from importlib.metadata import version
 from pathlib import Path
-from typing import cast
 
 import distinctipy  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
 from prompt_toolkit import prompt
@@ -232,8 +232,8 @@ def main() -> None:
         allow_termination = prompt_bool("Allow AI agents to terminate the conversation? (y/N): ", default=False)
         initial_message = prompt("Enter initial message (can be empty): ") or None
 
-        turn_order_values = ["round_robin", "random", "moderator", "vote"]
-        turn_order = cast(
+        turn_order_values = typing.cast(list[str], list(typing.get_args(TurnOrder)))
+        turn_order = typing.cast(
             TurnOrder,
             prompt(
                 "Enter turn order (default: round_robin): ",
