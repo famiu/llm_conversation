@@ -78,16 +78,15 @@ class ConversationManager:
                 + "final message to conclude the conversation.\n\n"
             )
 
-        # Update system prompts for each agent to give them more context about the conversation and their role.
+        # Updated system prompts for each agent to give the agents more context about the conversation and their role.
         for agent in self.agents:
             other_agents = ", ".join([a.name for a in self.agents if a != agent])
             agent.system_prompt = (
-                "This is a conversation between AI agents.\n\n"
-                + f"You are named {agent.name}. The other agents are {other_agents}. "
+                f"You are named {agent.name}. The other characters are {other_agents}. "
                 + "Your task is to play the role you're given and continue the conversation.\n\n"
                 + f"This is the prompt for your role: {agent.system_prompt}\n\n"
                 + additional_instructions
-            ).rstrip()
+            )
 
         # If the turn order is set to "moderator" and a moderator agent is not provided, create one.
         if self.turn_order == "moderator" and self.moderator is None:
@@ -165,8 +164,8 @@ class ConversationManager:
                 message (str): Message content
             """
             message: str = response["message"]
-            # Message from the agent with the agent's name included for additional context.
-            msg_with_marker = f"{self.agents[agent_idx].name}: {message}"
+            # Message with a from key to indicate the agent that the message is from.
+            message_with_from = str({"from": self.agents[agent_idx].name, "message": message})
 
             # The agents should get the full JSON response as context, to reinforce the response format and help them
             # generate more coherent responses.
@@ -175,16 +174,16 @@ class ConversationManager:
                     self.agents[agent_idx].name,
                     # Use "assistant" instead of "user" for the agent's own messages.
                     "assistant" if i == agent_idx else "user",
-                    # Use the full JSON response as context for the agent's own messages, to reinforce the response
-                    # format. For other agents' messages, the agent only needs the message content and who it's from.
-                    str(response) if i == agent_idx else f"{msg_with_marker}",
+                    # For the agent's own messages, use the full JSON response to reinforce the response format.
+                    # For other agents' messages, use the message content with from key only.
+                    str(response) if i == agent_idx else message_with_from,
                 )
 
             # If a moderator agent is present, add the message to the moderator's message history.
             if self.moderator is not None:
-                self.moderator.add_message(self.agents[agent_idx].name, "user", f"{msg_with_marker}")
+                self.moderator.add_message(self.agents[agent_idx].name, "user", message_with_from)
 
-            # Dialogue marker is unnecessary in the conversation log, so just store the message content.
+            # For the conversation log, only the message content is needed.
             self._conversation_log.append({"agent": self.agents[agent_idx].name, "content": message})
 
         agent_idx: int = self._pick_next_agent(None)
@@ -225,9 +224,8 @@ class ConversationManager:
                 for response_chunk in response_stream:
                     response += response_chunk
                     response_json = parse_partial_json(response)
-                    message: str = response_json["message"]
 
-                    yield message
+                    yield response_json["message"]
 
             yield (current_agent.name, stream_chunks())
 
@@ -287,7 +285,7 @@ class ConversationManager:
             int: Index of the agent to speak next
         """
         # Only two agents, so the next agent is the other one.
-        if len(self.agents) == 2:
+        if len(self.agents) == 2 and current_agent_idx is not None:
             return 1 if current_agent_idx == 0 else 0
 
         def choice_enum(ignore_idx: list[int]) -> enum.Enum:
@@ -315,7 +313,7 @@ class ConversationManager:
 
                 chain_output_format: type[BaseModel] = create_model(
                     "ChainOutputFormat",
-                    next_agent=(agent_choices_enum, Field(description="Name of the next agent to speak")),
+                    next_agent=(agent_choices_enum, Field(description="Name of the next character to speak")),
                 )
 
                 response = "".join(list(self.agents[current_agent_idx].get_response(chain_output_format)))
@@ -328,7 +326,7 @@ class ConversationManager:
 
                 moderator_output_format: type[BaseModel] = create_model(
                     "ModeratorOutputFormat",
-                    next_agent=(agent_choices_enum, Field(description="Who should speak next?")),
+                    next_agent=(agent_choices_enum, Field(description="Name of the next character to speak")),
                 )
 
                 moderator_response = "".join(list(self.moderator.get_response(moderator_output_format)))
@@ -343,7 +341,7 @@ class ConversationManager:
 
                     vote_output_format: type[BaseModel] = create_model(
                         "VoteOutputFormat",
-                        next_agent=(agent_choices_enum, Field(description="Who should speak next?")),
+                        next_agent=(agent_choices_enum, Field(description="Name of the next character to speak")),
                     )
 
                     response = "".join(list(agent.get_response(vote_output_format)))
