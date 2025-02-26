@@ -164,8 +164,8 @@ class ConversationManager:
                 message (str): Message content
             """
             message: str = response["message"]
-            # Message with a from key to indicate the agent that the message is from.
-            message_with_from = str({"from": self.agents[agent_idx].name, "message": message})
+            # Message with dialogue marker to indicate which agent is speaking.
+            message_with_marker = f"{self.agents[agent_idx].name}: {message}"
 
             # The agents should get the full JSON response as context, to reinforce the response format and help them
             # generate more coherent responses.
@@ -175,13 +175,13 @@ class ConversationManager:
                     # Use "assistant" instead of "user" for the agent's own messages.
                     "assistant" if i == agent_idx else "user",
                     # For the agent's own messages, use the full JSON response to reinforce the response format.
-                    # For other agents' messages, use the message content with from key only.
-                    str(response) if i == agent_idx else message_with_from,
+                    # For other agents' messages, use the message content with the dialogue marker.
+                    str(response) if i == agent_idx else message_with_marker,
                 )
 
             # If a moderator agent is present, add the message to the moderator's message history.
             if self.moderator is not None:
-                self.moderator.add_message(self.agents[agent_idx].name, "user", message_with_from)
+                self.moderator.add_message(self.agents[agent_idx].name, "user", message_with_marker)
 
             # For the conversation log, only the message content is needed.
             self._conversation_log.append({"agent": self.agents[agent_idx].name, "content": message})
