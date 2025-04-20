@@ -22,7 +22,7 @@ def get_available_models() -> list[str]:
 class AgentConfig(BaseModel):
     """Configuration for an AI agent."""
 
-    model_config = ConfigDict(extra="forbid")  # pyright: ignore[reportUnannotatedClassAttribute]
+    model_config = ConfigDict(extra="ignore")  # pyright: ignore[reportUnannotatedClassAttribute]
 
     name: str = Field(..., min_length=1, description="Name of the AI agent")
     model: str = Field(..., description="Ollama model to be used")
@@ -49,7 +49,7 @@ class AgentConfig(BaseModel):
 class ConversationSettings(BaseModel):
     """Extra settings for the conversation, not specific to any AI agent."""
 
-    model_config = ConfigDict(extra="forbid")  # pyright: ignore[reportUnannotatedClassAttribute]
+    model_config = ConfigDict(extra="ignore")  # pyright: ignore[reportUnannotatedClassAttribute]
 
     use_markdown: bool = Field(default=False, description="Enable Markdown formatting")
     allow_termination: bool = Field(default=False, description="Allow AI agents to terminate the conversation")
@@ -70,7 +70,7 @@ class ConversationSettings(BaseModel):
 class Config(BaseModel):
     """Configuration for the AI agents and conversation settings."""
 
-    model_config = ConfigDict(extra="forbid")  # pyright: ignore[reportUnannotatedClassAttribute]
+    model_config = ConfigDict(extra="ignore")  # pyright: ignore[reportUnannotatedClassAttribute]
 
     agents: list[AgentConfig] = Field(..., description="Configuration for AI agents")
     settings: ConversationSettings = Field(..., description="Conversation settings")
