@@ -16,29 +16,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: 'pip'
-
-      - name: Cache Poetry dependencies
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install poetry
-          poetry install --with dev
+        run: uv sync
 
       - name: Run Ruff formatting check
-        run: poetry run ruff format --check
+        run: uv run ruff format --check
 
       - name: Run Ruff linter
-        run: poetry run ruff check
+        run: uv run ruff check
 
       - name: Run MyPy type-checking
-        run: poetry run mypy
+        run: uv run mypy
