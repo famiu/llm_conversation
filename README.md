@@ -74,7 +74,7 @@ Alternatively, instead of going through the interactive setup, you may also prov
       {
           "name": "Paranoid Man",
           "model": "llama3.2:3b",
-          "system_prompt": "You are extremely paranoid about everything and constantly question others' intentions."
+          "system_prompt": "You are extremely paranoid about everything and constantly question others' intentions.",
           "temperature": 0.9,
           "ctx_size": 4096
       }
