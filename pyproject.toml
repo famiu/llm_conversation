@@ -53,7 +53,7 @@ llm-conversation = "llm_conversation:main"
 dev = [
     "basedpyright>=1.29.0,<2",
     "ruff>=0.9.4,<0.10",
-    "mypy>=1.15.0,<2",
+    "ty>=0.0.1a17,<1.0",
 ]
 
 [tool.hatch.version]
@@ -103,16 +103,11 @@ ignore = ["D417"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.mypy]
-files = ["src/", "scripts/"]
-python_version = "3.13"
-strict = true
-disallow_untyped_defs = true
-disallow_any_unimported = true
-warn_return_any = true
-warn_redundant_casts = true
-warn_unused_configs = true
-warn_unused_ignores = true
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.src]
+include = ["src", "scripts"]
 
 [tool.pyright]
 exclude = [".venv", "**/__pycache__"]

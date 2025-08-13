@@ -355,3 +355,7 @@ class ConversationManager:
                 agents_with_max_votes = [agent_name for agent_name, votes in agent_votes.items() if votes == max_votes]
 
                 return self._agent_name_to_idx[random.choice(agents_with_max_votes)]
+            case _:  # pyright: ignore[reportUnnecessaryComparison]
+                # HACK: This is here because Ty can't detect that the match statement covers all cases.
+                # TODO: Remove this once Ty supports exhaustive match statements for Literal types.
+                assert False, f"Invalid turn order: {self.turn_order}"  # pyright: ignore[reportUnreachable]

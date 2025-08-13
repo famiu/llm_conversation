@@ -28,5 +28,5 @@ jobs:
       - name: Run Ruff linter
         run: uv run ruff check
 
-      - name: Run MyPy type-checking
-        run: uv run mypy
+      - name: Run Ty type-checking
+        run: uv run ty check
