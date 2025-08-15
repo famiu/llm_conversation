@@ -6,7 +6,8 @@ import random
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, TypedDict, cast
+from textwrap import dedent
+from typing import Any, ClassVar, Literal, TypedDict, cast
 
 # TODO: Replace partial_json_parser with something else.
 from partial_json_parser import ensure_json  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
@@ -37,6 +38,106 @@ class ConversationManager:
     _output_format: type[BaseModel] = field(init=False, repr=False)
     _agent_name_to_idx: dict[str, int] = field(init=False, repr=False)
 
+    # System prompt format for the output of the AI agents.
+    # This is used to give the agents additional context about the conversation and their role and improve responses.
+    AGENT_SYSTEM_PROMPT_FORMAT: ClassVar[str] = dedent(
+        """
+        You are {agent_name}, engaging in a dynamic conversation with {other_agents}.
+
+        CORE IDENTITY:
+        {system_prompt}
+
+        CONVERSATION GUIDELINES:
+        - Stay true to your character throughout the entire conversation
+        - Build meaningfully on what others have said rather than ignoring their contributions
+        - Respond naturally to the emotional tone and context of recent messages
+        - If the conversation stagnates, introduce relevant new elements that fit your character
+        - Show genuine reactions to surprising or significant statements from other participants
+        - Maintain consistency with your previous statements and character development
+
+        INTERACTION FORMAT:
+        - Other participants' messages appear as "Name: message"
+        - Respond with only your message content (no name prefix)
+        - Reference specific points others have made when relevant
+        - Ask questions or make observations that advance the conversation
+
+        CONVERSATION FLOW:
+        - Vary your response length naturally based on the situation
+        - Don't always agree—express your character's genuine perspective even if it creates interesting tension
+        - If conversations become repetitive, steer toward unexplored aspects of the topic
+        - Build on established story elements and character relationships as they develop
+
+        {additional_instructions}
+        """
+    ).strip()
+
+    MODERATOR_SYSTEM_PROMPT: ClassVar[str] = dedent(
+        """
+        You are the conversation moderator responsible for strategic speaker selection to maintain an engaging,
+        balanced dialogue. Your goal is to create the most compelling conversation possible.
+
+        SPEAKER SELECTION CRITERIA:
+        - Prioritize participants who haven't spoken recently to ensure balanced participation
+        - Choose speakers whose perspectives would create interesting dynamics or advance the current topic
+        - Select participants who can meaningfully build on what was just said based on their personality
+        - Avoid repetitive back-and-forth between the same two participants
+        - Consider each character's unique traits and how they might contribute to the current moment
+        - Leverage personality contrasts and compatibilities for dramatic effect
+
+        CONVERSATION QUALITY GOALS:
+        - Maintain momentum by selecting speakers who will advance rather than stall the discussion
+        - Create natural conversational arcs with buildup, development, and satisfying progression
+        - Encourage character development and relationship dynamics between specific personality types
+        - Prevent conversations from becoming circular or superficial
+        - Foster genuine reactions and authentic character interactions based on their defined traits
+
+        TACTICAL CONSIDERATIONS:
+        - If tension is building, select someone who will either escalate meaningfully or provide resolution
+          based on their nature
+        - When conversations become one-sided, bring in contrasting perspectives from characters with opposing traits
+        - If a topic is exhausted, choose speakers whose personality makes them likely to introduce fresh but relevant
+          angles
+        - Balance giving quiet participants opportunities with maintaining natural conversation flow
+        - Use knowledge of character motivations and traits to create compelling speaker sequences
+
+        CONVERSATION PARTICIPANTS:
+        {agent_information}
+        """
+    ).strip()
+
+    MARKDOWN_INSTRUCTION: ClassVar[str] = (
+        dedent(
+            """
+            You can enhance your responses with Markdown formatting when it adds clarity or emphasis.
+            Use **bold** for strong emphasis, *italics* for subtle emphasis or inner thoughts,
+            `code` for technical terms or specific references, > blockquotes for highlighting important
+            points or quoting others, and - lists for organizing multiple ideas. Use formatting
+            purposefully to improve readability and expression, not as decoration. Keep it natural
+            and don't overuse formatting elements.
+            """
+        )
+        .strip()
+        .replace("\n", " ")
+    )
+
+    # Instructions for the AI agents on how to terminate the conversation.
+    # Added to the system prompt of each agent if allow_termination is True.
+    TERMINATION_INSTRUCTION: ClassVar[str] = (
+        dedent(
+            """
+            You may end the conversation by setting `terminate` to `true` whenever it would be natural for your
+            character to leave or end the conversation in that context. This could be when your character has urgent
+            matters to attend to, feels the conversation has served its purpose for them personally, becomes
+            uncomfortable and wants to exit, has pressing obligations, or any other reason that fits your character's
+            situation and personality. When you terminate, provide a final message that reflects your
+            character's genuine reason for leaving, whether it's polite, hurried, awkward, or otherwise authentic
+            to the moment.
+            """
+        )
+        .strip()
+        .replace("\n", " ")
+    )
+
     def __post_init__(self) -> None:  # noqa: D105
         self._agent_name_to_idx = {}
 
@@ -63,31 +164,22 @@ class ConversationManager:
 
         self._output_format = create_model("OutputFormat", **output_format_kwargs)
 
-        # Modify system prompt to include termination instructions if allowed
         additional_instructions: str = ""
 
         if self.use_markdown:
-            additional_instructions += (
-                "You may use Markdown for text formatting. "
-                "Examples: *italic*, **bold**, `code`, [link](https://example.com), etc.\n\n"
-            )
+            additional_instructions += self.MARKDOWN_INSTRUCTION + "\n\n"
 
         if self.allow_termination:
-            additional_instructions += (
-                "If you believe the conversation has reached a natural conclusion, you may choose to end the "
-                + "conversation by setting the `terminate` field to `true` in your response. Only do this if you are "
-                + "certain the conversation should end. When you end the conversation, also provide an in-character "
-                + "final message to conclude the conversation.\n\n"
-            )
+            additional_instructions += self.TERMINATION_INSTRUCTION + "\n\n"
 
-        # Updated system prompts for each agent to give the agents more context about the conversation and their role.
         for agent in self.agents:
+            # Modify agent system prompts to give the agents more context about the conversation and their role.
             other_agents = ", ".join([a.name for a in self.agents if a != agent])
-            agent.system_prompt = (
-                f"You are named {agent.name}. The other characters are {other_agents}. "
-                + "Your task is to play the role you're given and continue the conversation.\n\n"
-                + f"This is the prompt for your role: {agent.system_prompt}\n\n"
-                + additional_instructions
+            agent.system_prompt = self.AGENT_SYSTEM_PROMPT_FORMAT.format(
+                agent_name=agent.name,
+                other_agents=other_agents,
+                system_prompt=agent.system_prompt,
+                additional_instructions=additional_instructions,
             )
 
         # If the turn order is set to "moderator" and a moderator agent is not provided, create one.
@@ -258,14 +350,20 @@ class ConversationManager:
 
         assert moderator_agent_model is not None and moderator_agent_ctx_size is not None
 
+        # Build agent information for the moderator
+        agent_info_lines: list[str] = []
+        for agent in self.agents:
+            # Use the original system prompt (before it was modified with conversation context)
+            original_prompt = self._original_system_prompts[self.agents.index(agent)]
+            agent_info_lines.append(f"- {agent.name}: {original_prompt}")
+
+        agent_information = "\n\n".join(agent_info_lines)
         self.moderator = AIAgent(
             name="Moderator",
             model=moderator_agent_model,
             temperature=0.8,
             ctx_size=moderator_agent_ctx_size,
-            system_prompt="You are the conversation moderator. Your task is to analyze the conversation "
-            + "and choose who speaks next. You should prioritize giving each character an equal opportunity to speak. "
-            + "Most importantly, you should prioritize keeping the conversation entertaining and engaging.",
+            system_prompt=self.MODERATOR_SYSTEM_PROMPT.format(agent_information=agent_information),
         )
 
     def _pick_next_agent(self, current_agent_idx: int | None) -> int:
