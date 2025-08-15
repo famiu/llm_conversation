@@ -52,8 +52,11 @@ class ConversationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")  # pyright: ignore[reportUnannotatedClassAttribute]
 
     use_markdown: bool = Field(default=False, description="Enable Markdown formatting")
+    # TODO: Make termination make the agent leave the conversation instead of ending it.
+    #       Only end the conversation if all agents have left.
     allow_termination: bool = Field(default=False, description="Allow AI agents to terminate the conversation")
     initial_message: str | None = Field(default=None, description="Initial message to start the conversation")
+    # TODO: Add a turn order that lets conversations feel more natural instead of systematic.
     turn_order: TurnOrder = Field(default="round_robin", description="Strategy for selecting the next agent")
     moderator: AgentConfig | None = Field(
         default=None, description='Configuration for the moderator agent (if using "moderator" turn order)'

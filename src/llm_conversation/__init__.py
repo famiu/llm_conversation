@@ -172,6 +172,7 @@ def prompt_bool(prompt_text: str, default: bool = False) -> bool:
 
 
 # TODO: Add a GUI.
+# TODO: Add tests.
 def main() -> None:
     """Run a conversation between AI agents."""
     parser = argparse.ArgumentParser(description="Run a conversation between AI agents")
@@ -189,6 +190,8 @@ def main() -> None:
     console = Console()
     console.clear()
 
+    # TODO: Remove truecolor requirement. Either replace distinctipy with a library that supports 8-bit colors, or
+    #       implement a custom color mapping that converts distinctipy's RGB colors to 8-bit ANSI colors.
     if console.color_system != "truecolor":
         console.print("Please run this program in a terminal with true color support.", style="bold red")
         return

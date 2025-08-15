@@ -152,7 +152,12 @@ Additionally, if the output file has a `.json` extension, the output will automa
 
 ## Contributing
 
-Feel free to submit issues and pull requests for bug fixes or new features. Do keep in mind that this is a hobby project, so please have some patience.
+If you face any issues while using the project, want any new features, or want to improve the documentation, you are welcome to contribute to the project. You may contribute by:
+
+- **Reporting bugs or requesting features** if you're a user.
+- **Contributing code** if you're a developer.
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed instructions on how you can contribute regardless of whether you're a user or a developer.
 
 ## License
 

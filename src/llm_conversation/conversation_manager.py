@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
+# TODO: Replace partial_json_parser with something else.
 from partial_json_parser import ensure_json  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
 from pydantic import BaseModel, Field, create_model
 
@@ -16,6 +17,7 @@ from .ai_agent import AIAgent
 TurnOrder = Literal["round_robin", "random", "chain", "moderator", "vote"]
 
 
+# TODO: Improve all of the system prompts
 @dataclass
 class ConversationManager:
     """Manager for a conversation between AI agents."""

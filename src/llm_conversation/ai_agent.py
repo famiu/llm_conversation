@@ -37,6 +37,7 @@ class AIAgent:
         self.model = model
         self.temperature = temperature
         self.ctx_size = ctx_size
+        # TODO: Use a memory system instead to not grow context size indefinitely.
         self._messages = [{"role": "system", "content": system_prompt}]
 
     @property
