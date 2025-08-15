@@ -11,7 +11,7 @@
                     "type": "string"
                 },
                 "model": {
-                    "description": "Ollama model to be used",
+                    "description": "Model to be used",
                     "title": "Model",
                     "type": "string"
                 },
@@ -34,6 +34,12 @@
                     "minimum": 0,
                     "title": "Ctx Size",
                     "type": "integer"
+                },
+                "provider": {
+                    "default": "ollama",
+                    "description": "Provider to use for this agent",
+                    "title": "Provider",
+                    "type": "string"
                 }
             },
             "required": [
@@ -101,11 +107,53 @@
             },
             "title": "ConversationSettings",
             "type": "object"
+        },
+        "ProviderConfig": {
+            "additionalProperties": false,
+            "description": "Configuration for any OpenAI-compatible provider.",
+            "properties": {
+                "base_url": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "description": "Base URL for the provider API",
+                    "title": "Base Url"
+                },
+                "api_key": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "default": null,
+                    "description": "API key for the provider",
+                    "title": "Api Key"
+                }
+            },
+            "title": "ProviderConfig",
+            "type": "object"
         }
     },
     "additionalProperties": false,
     "description": "Configuration for the AI agents and conversation settings.",
     "properties": {
+        "providers": {
+            "additionalProperties": {
+                "$ref": "#/$defs/ProviderConfig"
+            },
+            "description": "Provider configurations",
+            "title": "Providers",
+            "type": "object"
+        },
         "agents": {
             "description": "Configuration for AI agents",
             "items": {

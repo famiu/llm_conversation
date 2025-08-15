@@ -8,7 +8,7 @@ from pathlib import Path
 
 import distinctipy  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
 from prompt_toolkit import prompt
-from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.completion import FuzzyWordCompleter, WordCompleter
 from prompt_toolkit.validation import Validator
 from rich.console import Console
 from rich.live import Live
@@ -16,43 +16,127 @@ from rich.markdown import Markdown
 from rich.text import Text
 
 from .ai_agent import AIAgent
-from .config import AgentConfig, get_available_models, load_config
-from .conversation_manager import ConversationManager, TurnOrder
+from .config import (
+    DEFAULT_PROVIDERS,
+    PROVIDER_NAMES_CAPITALIZED,
+    AgentConfig,
+    Config,
+    ProviderConfig,
+    TurnOrder,
+    create_openai_client,
+    get_available_models,
+    load_config,
+    validate_provider_config,
+)
+from .conversation_manager import ConversationManager
 
 
-def create_ai_agent_from_config(config: AgentConfig) -> AIAgent:
-    """Create an AIAgent instance from configuration dictionary."""
-    return AIAgent(
-        name=config.name,
-        model=config.model,
-        system_prompt=config.system_prompt,
-        temperature=config.temperature or 0.8,
-        ctx_size=config.ctx_size or 2048,
-    )
-
-
-def create_ai_agent_from_input(console: Console, placeholder_name: str) -> AIAgent:
+def create_ai_agent_from_input(
+    console: Console, placeholder_name: str, provider_api_keys: dict[str, str | None]
+) -> AIAgent:
     """Create an AIAgent instance from user input.
 
     Args:
         console (Console): Rich console instance.
-        agent_number (int): Number of the AI agent, used for display.
+        placeholder_name (str): Default name for the agent.
 
     Returns:
         AIAgent: Created AI agent instance.
     """
-    console.print(f'=== Creating AI Agent: "{placeholder_name}" ===\n', style="bold cyan")
+    while True:
+        console.clear()
+        console.print(f'=== Creating AI Agent: "{placeholder_name}" ===\n', style="bold cyan")
 
-    available_models = get_available_models()
-    console.print("Available Models:", style="bold")
-    for model in available_models:
-        console.print(Text("• " + model))
-    console.print("")
+        # Step 1: Choose provider
+        available_providers = list(DEFAULT_PROVIDERS.keys()) + ["custom"]
+        console.print("Available Providers:", style="bold")
+        for provider_name in available_providers:
+            console.print(Text("• " + provider_name))
+        console.print("")
 
-    model_name = (
-        prompt(
-            f"Enter model name (default: {available_models[0]}): ",
-            completer=WordCompleter(available_models, ignore_case=True),
+        provider_name = (
+            prompt(
+                "Enter provider name (default: ollama): ",
+                completer=FuzzyWordCompleter(available_providers),
+                complete_while_typing=True,
+                validator=Validator.from_callable(
+                    lambda text: text == "" or text in available_providers,
+                    error_message="Provider not found",
+                    move_cursor_to_end=True,
+                ),
+                validate_while_typing=False,
+            )
+            or "ollama"
+        )
+
+        # Step 2: Configure provider
+        provider_name_capitalized = (
+            PROVIDER_NAMES_CAPITALIZED.get(provider_name, provider_name)
+            if provider_name in DEFAULT_PROVIDERS
+            else "Custom"
+        )
+        cache_key: str = provider_name.lower()
+        provider: ProviderConfig | None = None
+
+        console.print(f"\n=== {provider_name_capitalized} Configuration ===\n", style="bold cyan")
+
+        if provider_name == "custom":
+            base_url = prompt("Enter base URL (e.g., https://api.example.com/v1): ")
+            # Ensure that custom providers with different base URLs are cached separately.
+            cache_key += f":{base_url}"
+            provider = ProviderConfig(
+                base_url=base_url,
+                api_key=None,  # Custom providers may not require an API key
+            )
+        else:
+            # All non-custom providers have a default base URL.
+            # Unlike the config file, the interactive prompt does not allow changing the base URL.
+            provider = DEFAULT_PROVIDERS[provider_name].model_copy()
+
+        assert provider.api_key is None, "Provider API key should be None initially"
+
+        if provider_name in provider_api_keys:
+            provider.api_key = provider_api_keys[provider_name]
+            console.print(f"ℹ️ Using stored API key for {provider_name_capitalized}.", style="bold blue")
+        else:
+            provider.api_key = (
+                prompt(f"Enter API key for {provider_name_capitalized} (optional): ", is_password=True).strip() or None
+            )
+
+            console.print("\nValidating API key...", style="yellow")
+
+            if not validate_provider_config(provider):
+                console.print("❌ Invalid API key or provider unreachable!", style="bold red")
+                console.print("Please try again with a valid configuration.\n", style="yellow")
+                _ = prompt("Press Enter to retry or Ctrl+C to exit...")
+                continue  # Retry
+
+            console.print("✅ API key is valid!", style="bold green")
+            console.print("ℹ️ This key will be remembered for this session.", style="bold blue")
+            # Store the validated API key in the session cache
+            provider_api_keys[provider_name] = provider.api_key
+
+        # Step 3: Get available models
+        console.print(f"\nFetching available models from {provider_name_capitalized}...", style="yellow")
+        available_models = get_available_models(provider)
+
+        if not available_models:
+            console.print(f"❌ No models available from {provider_name_capitalized}!", style="bold red")
+            console.print("Please try a different provider or check your configuration.\n", style="yellow")
+            _ = prompt("Press Enter to retry or Ctrl+C to exit...")
+            continue  # Retry
+
+        console.print("Available Models:", style="bold")
+        for model in available_models[:20]:  # Limit display for readability
+            console.print(Text("• " + model))
+        if len(available_models) > 20:
+            console.print(Text(f"... and {len(available_models) - 20} more"))
+        console.print("")
+
+        # Step 4: Configure model and agent settings
+        model_name = prompt(
+            "Enter model name: ",
+            completer=FuzzyWordCompleter(available_models, WORD=True),
             complete_while_typing=True,
             validator=Validator.from_callable(
                 lambda text: text == "" or text in available_models,
@@ -61,54 +145,76 @@ def create_ai_agent_from_input(console: Console, placeholder_name: str) -> AIAge
             ),
             validate_while_typing=False,
         )
-        or available_models[0]
-    )
 
-    def _validate_float(text: str) -> bool:
-        if text == "":
+        def _validate_float(text: str) -> bool:
+            if text == "":
+                return True
+            try:
+                _ = float(text)
+            except ValueError:
+                return False
             return True
-        try:
-            _ = float(text)
-        except ValueError:
-            return False
 
-        return True
-
-    temperature_str: str = (
-        prompt(
-            "Enter temperature (default: 0.8): ",
-            validator=Validator.from_callable(
-                lambda text: text == "" or _validate_float(text) and 0.0 <= float(text) <= 1.0,
-                error_message="Temperature must be a number between 0.0 and 1.0",
-                move_cursor_to_end=True,
-            ),
+        temperature_str: str = (
+            prompt(
+                "Enter temperature (default: 0.8): ",
+                validator=Validator.from_callable(
+                    lambda text: text == "" or _validate_float(text) and 0.0 <= float(text) <= 1.0,
+                    error_message="Temperature must be a number between 0.0 and 1.0",
+                    move_cursor_to_end=True,
+                ),
+            )
+            or "0.8"
         )
-        or "0.8"
-    )
-    temperature: float = float(temperature_str)
+        temperature: float = float(temperature_str)
 
-    ctx_size_str: str = (
-        prompt(
-            "Enter context size (default: 2048): ",
-            validator=Validator.from_callable(
-                lambda text: text == "" or text.isdigit() and int(text) >= 0,
-                error_message="Context size must be a non-negative integer",
-                move_cursor_to_end=True,
-            ),
+        ctx_size_str: str = (
+            prompt(
+                "Enter context size (default: 2048): ",
+                validator=Validator.from_callable(
+                    lambda text: text == "" or text.isdigit() and int(text) >= 0,
+                    error_message="Context size must be a non-negative integer",
+                    move_cursor_to_end=True,
+                ),
+            )
+            or "2048"
         )
-        or "2048"
-    )
-    ctx_size: int = int(ctx_size_str)
+        ctx_size: int = int(ctx_size_str)
 
-    name = prompt(f"Enter name (default: {placeholder_name}): ") or placeholder_name
-    system_prompt = prompt(f"Enter system prompt for {name}: ")
+        name = prompt(f"Enter name (default: {placeholder_name}): ") or placeholder_name
+        system_prompt = prompt(f"Enter system prompt for {name}: ")
+
+        agent = AIAgent(
+            name=name,
+            model=model_name,
+            temperature=temperature,
+            ctx_size=ctx_size,
+            system_prompt=system_prompt,
+            client=create_openai_client(provider),
+        )
+
+        return agent
+
+
+def create_ai_agent_from_config(agent_config: AgentConfig, config: Config) -> AIAgent:
+    """Create an AIAgent instance from configuration.
+
+    Args:
+        agent_config (AgentConfig): Configuration for the agent.
+        config (Config): Full configuration containing provider details.
+
+    Returns:
+        AIAgent: Created AI agent instance.
+    """
+    provider = config.providers[agent_config.provider]
 
     return AIAgent(
-        name=name,
-        model=model_name,
-        temperature=temperature,
-        ctx_size=ctx_size,
-        system_prompt=system_prompt,
+        name=agent_config.name,
+        model=agent_config.model,
+        temperature=agent_config.temperature,
+        ctx_size=agent_config.ctx_size,
+        system_prompt=agent_config.system_prompt,
+        client=create_openai_client(provider),
     )
 
 
@@ -172,6 +278,7 @@ def prompt_bool(prompt_text: str, default: bool = False) -> bool:
 
 
 # TODO: Add a GUI.
+# TODO: Add a logging system for debugging.
 def main() -> None:
     """Run a conversation between AI agents."""
     parser = argparse.ArgumentParser(description="Run a conversation between AI agents")
@@ -189,6 +296,8 @@ def main() -> None:
     console = Console()
     console.clear()
 
+    # TODO: Remove truecolor requirement. Either replace distinctipy with a library that supports 8-bit colors, or
+    #       implement a custom color mapping that converts distinctipy's RGB colors to 8-bit ANSI colors.
     if console.color_system != "truecolor":
         console.print("Please run this program in a terminal with true color support.", style="bold red")
         return
@@ -200,13 +309,13 @@ def main() -> None:
     if args.config:
         # Load from config file
         config = load_config(args.config)
-        agents = [create_ai_agent_from_config(agent_config) for agent_config in config.agents]
+        agents = [create_ai_agent_from_config(agent_config, config) for agent_config in config.agents]
         settings = config.settings
         use_markdown = settings.use_markdown or False
         allow_termination = settings.allow_termination or False
         initial_message = settings.initial_message
         turn_order = settings.turn_order
-        moderator = create_ai_agent_from_config(settings.moderator) if settings.moderator else None
+        moderator = create_ai_agent_from_config(settings.moderator, config) if settings.moderator else None
     else:
         agent_count_str: str = (
             prompt(
@@ -219,14 +328,15 @@ def main() -> None:
             )
             or "2"
         )
-        console.clear()
 
         agent_count: int = int(agent_count_str)
         agents = []
+        provider_api_keys: dict[str, str | None] = {}  # Session cache for API keys
 
         for i in range(agent_count):
-            agents.append(create_ai_agent_from_input(console, f"AI {i + 1}"))
-            console.clear()
+            agent = create_ai_agent_from_input(console, f"AI {i + 1}", provider_api_keys)
+            agents.append(agent)
+        console.clear()
 
         use_markdown = prompt_bool("Use Markdown for text formatting? (y/N): ", default=False)
         allow_termination = prompt_bool("Allow AI agents to terminate the conversation? (y/N): ", default=False)
@@ -248,9 +358,7 @@ def main() -> None:
         )
 
         if turn_order == "moderator" and prompt_bool("Configure the moderator agent? (y/N): ", default=False):
-            console.clear()
-            moderator = create_ai_agent_from_input(console, "Moderator")
-
+            moderator = create_ai_agent_from_input(console, "Moderator", provider_api_keys)
         console.clear()
 
     manager = ConversationManager(
