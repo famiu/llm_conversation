@@ -101,5 +101,4 @@ def load_config(config_path: Path) -> Config:
     try:
         return Config.model_validate(config_dict)
     except Exception as e:
-        msg = f"Configuration validation failed: {e}"
-        raise ValueError(msg)
+        raise ValueError(f"Configuration validation failed: {e}")

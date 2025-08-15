@@ -18,6 +18,9 @@ from rich.text import Text
 from .ai_agent import AIAgent
 from .config import AgentConfig, get_available_models, load_config
 from .conversation_manager import ConversationManager, TurnOrder
+from .logging_config import get_logger, setup_logging
+
+logger = get_logger(__name__)
 
 
 def create_ai_agent_from_config(config: AgentConfig) -> AIAgent:
@@ -175,6 +178,8 @@ def prompt_bool(prompt_text: str, default: bool = False) -> bool:
 # TODO: Add tests.
 def main() -> None:
     """Run a conversation between AI agents."""
+    setup_logging()
+
     parser = argparse.ArgumentParser(description="Run a conversation between AI agents")
     _ = parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {version('llm-conversation')}")
     _ = parser.add_argument(
@@ -202,7 +207,10 @@ def main() -> None:
 
     if args.config:
         # Load from config file
+        logger.info(f"Loading configuration from {args.config}")
         config = load_config(args.config)
+        logger.info(f"Configuration loaded successfully from {args.config}")
+
         agents = [create_ai_agent_from_config(agent_config) for agent_config in config.agents]
         settings = config.settings
         use_markdown = settings.use_markdown or False
@@ -211,6 +219,7 @@ def main() -> None:
         turn_order = settings.turn_order
         moderator = create_ai_agent_from_config(settings.moderator) if settings.moderator else None
     else:
+        logger.info("Using interactive configuration mode")
         agent_count_str: str = (
             prompt(
                 "Enter the number of AI agents (default: 2): ",
@@ -272,6 +281,7 @@ def main() -> None:
         agent.name: (int(r * 255), int(g * 255), int(b * 255)) for agent, (r, g, b) in zip(agents, colors)
     }
 
+    logger.info(f"Starting conversation with {len(agents)} agents")
     console.print("=== Conversation Started ===\n", style="bold cyan")
     is_first_message = True
 
@@ -291,6 +301,7 @@ def main() -> None:
         console.print("\n=== Conversation Terminated by User ===\n", style="bold cyan")
 
     if args.output is not None:
+        logger.info(f"Saving conversation to {args.output}")
         manager.save_conversation(args.output)
         console.print(f"\nConversation saved to {args.output}\n\n", style="bold yellow")
 

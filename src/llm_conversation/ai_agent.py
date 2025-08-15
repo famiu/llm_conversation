@@ -6,6 +6,10 @@ from typing import Any, cast
 import ollama
 from pydantic import BaseModel
 
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class AIAgent:
     """An AI agent for conversational AI using Ollama models."""
@@ -40,6 +44,8 @@ class AIAgent:
         # TODO: Use a memory system instead to not grow context size indefinitely.
         self._messages = [{"role": "system", "content": system_prompt}]
 
+        logger.info(f"Initialized AI agent '{name}' with model '{model}' (temp={temperature}, ctx_size={ctx_size})")
+
     @property
     def system_prompt(self) -> str:
         """Get the system prompt for the agent."""
@@ -63,16 +69,20 @@ class AIAgent:
         Yields:
             str: Chunk of the response from the agent
         """
-        response_stream = ollama.chat(  # pyright: ignore[reportUnknownMemberType]
-            model=self.model,
-            messages=self._messages,
-            options={
-                "num_ctx": self.ctx_size,
-                "temperature": self.temperature,
-            },
-            stream=True,
-            format=output_format.model_json_schema(),
-        )
+        try:
+            response_stream = ollama.chat(  # pyright: ignore[reportUnknownMemberType]
+                model=self.model,
+                messages=self._messages,
+                options={
+                    "num_ctx": self.ctx_size,
+                    "temperature": self.temperature,
+                },
+                stream=True,
+                format=output_format.model_json_schema(),
+            )
+        except Exception as e:
+            logger.error(f"Agent '{self.name}' model '{self.model}' failed to generate response: {e}")
+            raise
 
         chunks: list[str] = []
         for chunk in response_stream:
@@ -82,4 +92,8 @@ class AIAgent:
 
     def get_param_count(self) -> int:
         """Get the number of parameters in the model."""
-        return cast(int, cast(dict[str, Any], ollama.show(self.model).modelinfo)["general.parameter_count"])
+        try:
+            return cast(int, cast(dict[str, Any], ollama.show(self.model).modelinfo)["general.parameter_count"])
+        except Exception as e:
+            logger.error(f"Could not get parameter count for model '{self.model}': {e}")
+            raise

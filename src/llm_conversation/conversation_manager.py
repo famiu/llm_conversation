@@ -14,11 +14,13 @@ from partial_json_parser import ensure_json  # type: ignore[import-untyped] # py
 from pydantic import BaseModel, Field, create_model
 
 from .ai_agent import AIAgent
+from .logging_config import get_logger
+
+logger = get_logger(__name__)
 
 TurnOrder = Literal["round_robin", "random", "chain", "moderator", "vote"]
 
 
-# TODO: Improve all of the system prompts
 @dataclass
 class ConversationManager:
     """Manager for a conversation between AI agents."""
@@ -188,6 +190,11 @@ class ConversationManager:
         elif self.turn_order != "moderator" and self.moderator is not None:
             raise ValueError("Cannot use a moderator agent without the turn order set to 'moderator'")
 
+        logger.info(
+            f"Conversation Manager initialized: {len(self.agents)} agents, "
+            + f"turn_order={self.turn_order}, termination={'enabled' if self.allow_termination else 'disabled'}"
+        )
+
     def save_conversation(self, filename: Path) -> None:
         """Save the conversation log to a file.
 
@@ -327,6 +334,10 @@ class ConversationManager:
 
             # Check if the conversation should be terminated.
             if response_json.get("terminate", False):
+                logger.info(
+                    f"Conversation terminated by agent '{current_agent.name}' "
+                    + f"after {len(self._conversation_log)} messages"
+                )
                 break
 
             agent_idx = self._pick_next_agent(agent_idx)
@@ -366,6 +377,11 @@ class ConversationManager:
             system_prompt=self.MODERATOR_SYSTEM_PROMPT.format(agent_information=agent_information),
         )
 
+        logger.info(
+            f"Auto-created moderator agent using model '{moderator_agent_model}' "
+            + f"with ctx_size {moderator_agent_ctx_size}"
+        )
+
     def _pick_next_agent(self, current_agent_idx: int | None) -> int:
         """Pick the next agent to speak based on the turn order.
 
@@ -384,78 +400,89 @@ class ConversationManager:
         Returns:
             int: Index of the agent to speak next
         """
+        selected_idx: int
+        logger.debug(f"Picking next agent (turn_order={self.turn_order})")
+
         # Only two agents, so the next agent is the other one.
         if len(self.agents) == 2 and current_agent_idx is not None:
-            return 1 if current_agent_idx == 0 else 0
+            selected_idx = 1 if current_agent_idx == 0 else 0
+        else:
 
-        def choice_enum(ignore_idx: list[int]) -> enum.Enum:
-            choices_dict: dict[str, str] = {}
+            def choice_enum(ignore_idx: list[int]) -> enum.Enum:
+                choices_dict: dict[str, str] = {}
 
-            choices_dict = {agent.name: agent.name for i, agent in enumerate(self.agents) if i not in ignore_idx}
+                choices_dict = {agent.name: agent.name for i, agent in enumerate(self.agents) if i not in ignore_idx}
 
-            return enum.Enum("NextAgentChoices", choices_dict)  # pyright: ignore[reportReturnType]
+                return enum.Enum("NextAgentChoices", choices_dict)  # pyright: ignore[reportReturnType]
 
-        match self.turn_order:
-            case "round_robin":
-                return (current_agent_idx + 1) % len(self.agents) if current_agent_idx is not None else 0
-            case "random":
-                if current_agent_idx is None:
-                    return random.randint(0, len(self.agents) - 1)
+            match self.turn_order:
+                case "round_robin":
+                    selected_idx = (current_agent_idx + 1) % len(self.agents) if current_agent_idx is not None else 0
+                case "random":
+                    if current_agent_idx is None:
+                        selected_idx = random.randint(0, len(self.agents) - 1)
+                    else:
+                        idx = random.randint(0, len(self.agents) - 2)
+                        selected_idx = idx if idx < current_agent_idx else idx + 1
+                case "chain":
+                    if current_agent_idx is None:
+                        # No agent has spoken yet, so pick a random agent to start the conversation.
+                        logger.debug("No agent has spoken yet, picking a random agent to start the conversation")
+                        selected_idx = random.randint(0, len(self.agents) - 1)
+                    else:
+                        agent_choices_enum = choice_enum([current_agent_idx])
 
-                idx = random.randint(0, len(self.agents) - 2)
-                return idx if idx < current_agent_idx else idx + 1
-            case "chain":
-                if current_agent_idx is None:
-                    # No agent has spoken yet, so pick a random agent to start the conversation.
-                    return random.randint(0, len(self.agents) - 1)
+                        chain_output_format: type[BaseModel] = create_model(
+                            "ChainOutputFormat",
+                            next_agent=(agent_choices_enum, Field(description="Name of the next character to speak")),
+                        )
 
-                agent_choices_enum = choice_enum([current_agent_idx])
+                        response = "".join(list(self.agents[current_agent_idx].get_response(chain_output_format)))
+                        next_agent_name = json.loads(response)["next_agent"]
+                        selected_idx = self._agent_name_to_idx[next_agent_name]
+                case "moderator":
+                    assert self.moderator is not None
+                    agent_choices_enum = choice_enum([current_agent_idx] if current_agent_idx is not None else [])
 
-                chain_output_format: type[BaseModel] = create_model(
-                    "ChainOutputFormat",
-                    next_agent=(agent_choices_enum, Field(description="Name of the next character to speak")),
-                )
-
-                response = "".join(list(self.agents[current_agent_idx].get_response(chain_output_format)))
-                next_agent_name = json.loads(response)["next_agent"]
-
-                return self._agent_name_to_idx[next_agent_name]
-            case "moderator":
-                assert self.moderator is not None
-                agent_choices_enum = choice_enum([current_agent_idx] if current_agent_idx is not None else [])
-
-                moderator_output_format: type[BaseModel] = create_model(
-                    "ModeratorOutputFormat",
-                    next_agent=(agent_choices_enum, Field(description="Name of the next character to speak")),
-                )
-
-                moderator_response = "".join(list(self.moderator.get_response(moderator_output_format)))
-                next_agent_name = json.loads(moderator_response)["next_agent"]
-
-                return self._agent_name_to_idx[next_agent_name]
-            case "vote":
-                agent_votes: dict[str, int] = {agent.name: 0 for agent in self.agents}
-
-                for i, agent in enumerate(self.agents):
-                    agent_choices_enum = choice_enum([i] if current_agent_idx is None else [current_agent_idx, i])
-
-                    vote_output_format: type[BaseModel] = create_model(
-                        "VoteOutputFormat",
+                    moderator_output_format: type[BaseModel] = create_model(
+                        "ModeratorOutputFormat",
                         next_agent=(agent_choices_enum, Field(description="Name of the next character to speak")),
                     )
 
-                    response = "".join(list(agent.get_response(vote_output_format)))
-                    agent_name = json.loads(response)["next_agent"]
+                    moderator_response = "".join(list(self.moderator.get_response(moderator_output_format)))
+                    next_agent_name = json.loads(moderator_response)["next_agent"]
+                    selected_idx = self._agent_name_to_idx[next_agent_name]
+                case "vote":
+                    agent_votes: dict[str, int] = {agent.name: 0 for agent in self.agents}
 
-                    assert agent_name in agent_votes, f"Invalid agent name: {agent_name}"
-                    agent_votes[agent_name] += 1
+                    for i, agent in enumerate(self.agents):
+                        agent_choices_enum = choice_enum([i] if current_agent_idx is None else [current_agent_idx, i])
 
-                # Find the agents with the most votes and pick one of them randomly.
-                max_votes = max(agent_votes.values())
-                agents_with_max_votes = [agent_name for agent_name, votes in agent_votes.items() if votes == max_votes]
+                        vote_output_format: type[BaseModel] = create_model(
+                            "VoteOutputFormat",
+                            next_agent=(agent_choices_enum, Field(description="Name of the next character to speak")),
+                        )
 
-                return self._agent_name_to_idx[random.choice(agents_with_max_votes)]
-            case _:  # pyright: ignore[reportUnnecessaryComparison]
-                # HACK: This is here because Ty can't detect that the match statement covers all cases.
-                # TODO: Remove this once Ty supports exhaustive match statements for Literal types.
-                assert False, f"Invalid turn order: {self.turn_order}"  # pyright: ignore[reportUnreachable]
+                        response = "".join(list(agent.get_response(vote_output_format)))
+                        agent_name = json.loads(response)["next_agent"]
+
+                        assert agent_name in agent_votes, f"Invalid agent name: {agent_name}"
+                        agent_votes[agent_name] += 1
+
+                    logger.debug(f"Vote results: {dict(agent_votes)}")
+                    # Find the agents with the most votes and pick one of them randomly.
+                    max_votes = max(agent_votes.values())
+                    agents_with_max_votes = [
+                        agent_name for agent_name, votes in agent_votes.items() if votes == max_votes
+                    ]
+
+                    logger.debug(f"Agents with max votes ({max_votes}): {agents_with_max_votes}, choosing one randomly")
+                    selected_agent = random.choice(agents_with_max_votes)
+                    selected_idx = self._agent_name_to_idx[selected_agent]
+                case _:  # pyright: ignore[reportUnnecessaryComparison]
+                    # HACK: This is here because Ty can't detect that the match statement covers all cases.
+                    # TODO: Remove this once Ty supports exhaustive match statements for Literal types.
+                    assert False, f"Invalid turn order: {self.turn_order}"  # pyright: ignore[reportUnreachable]
+
+        logger.debug(f"Selected agent '{self.agents[selected_idx].name}' using '{self.turn_order}' strategy")
+        return selected_idx

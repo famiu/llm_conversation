@@ -102,14 +102,14 @@ When suggesting a feature:
 
 The application includes developer logging that can be enabled via environment variables:
 
-- **`LOG_LEVEL`**: Set to `DEBUG` or `INFO` to enable logging (disabled by default)
-- **`LOG_FILE`**: Optional file path for log output (defaults to stderr)
+- **`LLM_CONVERSATION_LOG_LEVEL`**: Set to `DEBUG`, `INFO`, `WARNING` or `ERROR` to enable logging (disabled by default)
+- **`LLM_CONVERSATION_LOG_FILE`**: Optional file path for log output (defaults to stderr only)
 
 ### Example usage:
 ```bash
 # Enable debug logging to stderr
-LOG_LEVEL=DEBUG llm-conversation
+LLM_CONVERSATION_LOG_LEVEL=DEBUG llm-conversation
 
 # Enable info logging to a file
-LOG_LEVEL=INFO LOG_FILE=debug.log llm-conversation
+LLM_CONVERSATION_LOG_LEVEL=INFO LLM_CONVERSATION_LOG_FILE=debug.log llm-conversation
 ```
