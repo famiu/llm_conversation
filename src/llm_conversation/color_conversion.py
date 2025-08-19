@@ -8,14 +8,10 @@ RGB = tuple[int, int, int]
 
 
 def _color_distance(c1: RGB, c2: RGB) -> float:
-    """Calculate perceptually accurate color distance between two RGB colors using ColorAide.
-
-    Uses ColorAide's delta_e method, which implements perceptually uniform
-    color difference calculations.
+    """Calculate perceptually accurate color distance between two RGB colors.
 
     Args:
-        c1: First RGB color as (r, g, b) tuple with values 0-255
-        c2: Second RGB color as (r, g, b) tuple with values 0-255
+        c1, c2: RGB color values (0-255)
 
     Returns:
         Color difference value (lower = more similar)
@@ -23,7 +19,7 @@ def _color_distance(c1: RGB, c2: RGB) -> float:
     # Convert RGB 0-255 to 0-1 range for ColorAide
     color1 = Color("srgb", [c1[0] / 255, c1[1] / 255, c1[2] / 255])
     color2 = Color("srgb", [c2[0] / 255, c2[1] / 255, c2[2] / 255])
-    return color1.delta_e(color2)
+    return color1.delta_e(color2, method="2000")
 
 
 @functools.cache
