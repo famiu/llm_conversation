@@ -46,6 +46,15 @@ wheels = [
 ]
 
 [[package]]
+name = "coloraide"
+version = "5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/63/215d57a088d7d3620029ae504de58f22c2f44eea8fd361966033f9d65039/coloraide-5.0.tar.gz", hash = "sha256:f2313c2fc746e07a09a3ac6f860b46ba179e06dd1f7a3f2e8e01ced59325591a", size = 19129619, upload-time = "2025-08-07T17:54:10.107Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/61/6df8550995220d722b996e9cc156aead0744f6ad637a2a7423b81a11c62d/coloraide-5.0-py3-none-any.whl", hash = "sha256:175791b98d4e502f91b49a50fd74b671d76df75ff0514ef3b7dcfa4f505bc8e2", size = 268372, upload-time = "2025-08-07T17:54:08.086Z" },
+]
+
+[[package]]
 name = "distinctipy"
 version = "1.3.4"
 source = { registry = "https://pypi.org/simple" }
@@ -107,6 +116,7 @@ wheels = [
 name = "llm-conversation"
 source = { editable = "." }
 dependencies = [
+    { name = "coloraide" },
     { name = "distinctipy" },
     { name = "ollama" },
     { name = "partial-json-parser" },
@@ -124,6 +134,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "coloraide", specifier = ">=5.0,<6.0" },
     { name = "distinctipy", specifier = ">=1.3.4,<2.0.0" },
     { name = "ollama", specifier = ">=0.4.7,<0.5.0" },
     { name = "partial-json-parser", specifier = ">=0.2.1.1.post5,<0.3.0.0" },

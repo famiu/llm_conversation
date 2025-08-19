@@ -16,6 +16,7 @@ from rich.markdown import Markdown
 from rich.text import Text
 
 from .ai_agent import AIAgent
+from .color_conversion import rgb_to_ansi16, rgb_to_ansi256
 from .config import AgentConfig, get_available_models, load_config
 from .conversation_manager import ConversationManager, TurnOrder
 from .logging_config import get_logger, setup_logging
@@ -128,70 +129,6 @@ def markdown_to_text(markdown_content: str) -> Text:
     return result
 
 
-def rgb_to_ansi256(r: int, g: int, b: int) -> int:
-    """Convert RGB values (0-255) to ANSI 256-color code (0-255).
-
-    The 256 color palette consists of:
-    - Colors 0-15: Standard 16 colors
-    - Colors 16-231: 216-color RGB cube (6x6x6)
-    - Colors 232-255: 24 grayscale colors
-
-    Args:
-        r, g, b: RGB color values (0-255)
-
-    Returns:
-        ANSI 256-color code (0-255)
-    """
-    # Clamp inputs to valid range
-    r, g, b = max(0, min(255, int(r))), max(0, min(255, int(g))), max(0, min(255, int(b)))
-
-    # Handle grayscale colors (when r == g == b)
-    if r == g == b:
-        if r < 8:
-            return 16  # Black
-        if r > 248:
-            return 231  # White
-        # Map to grayscale range (232-255)
-        return int(((r - 8) / 247) * 24) + 232
-
-    # Convert to 6-level RGB cube (colors 16-231)
-    # Each component is mapped from 0-255 to 0-5
-    r_cube = int(r / 255 * 5)
-    g_cube = int(g / 255 * 5)
-    b_cube = int(b / 255 * 5)
-
-    # Calculate position in 216-color cube, offset by 16
-    return 16 + (36 * r_cube) + (6 * g_cube) + b_cube
-
-
-def rgb_to_ansi16(r: int, g: int, b: int) -> str:
-    """Convert RGB values (0-255) to ANSI 16-color name.
-
-    Args:
-        r, g, b: RGB color values (0-255)
-
-    Returns:
-        ANSI 16-color name
-    """
-    # Clamp inputs to valid range
-    r, g, b = max(0, min(255, int(r))), max(0, min(255, int(g))), max(0, min(255, int(b)))
-
-    # Threshold each channel into 0/1
-    r_bit = 1 if r >= 128 else 0
-    g_bit = 1 if g >= 128 else 0
-    b_bit = 1 if b >= 128 else 0
-
-    # Basic color index (0–7)
-    idx = (r_bit << 0) | (g_bit << 1) | (b_bit << 2)
-    base_colors = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
-
-    # Determine brightness for bright variants
-    brightness = (r + g + b) / 3
-    if brightness > 192 and idx != 0:  # don’t make black bright
-        return "bright_" + base_colors[idx]
-    return base_colors[idx]
-
-
 def get_compatible_color(console: Console, r: int, g: int, b: int) -> str:
     """Get appropriate Rich color string based on terminal capabilities.
 
@@ -205,9 +142,9 @@ def get_compatible_color(console: Console, r: int, g: int, b: int) -> str:
     if console.color_system == "truecolor":
         return f"rgb({r},{g},{b})"
     elif console.color_system in ("256", "eight_bit"):
-        return f"color({rgb_to_ansi256(r, g, b)})"
+        return f"color({rgb_to_ansi256((r, g, b))})"
     else:
-        return rgb_to_ansi16(r, g, b)
+        return rgb_to_ansi16((r, g, b))
 
 
 def display_message(
@@ -258,6 +195,7 @@ def prompt_bool(prompt_text: str, default: bool = False) -> bool:
 
 # TODO: Add a GUI.
 # TODO: Add tests.
+# TODO: Rename the project to ClankerTinker.
 def main() -> None:
     """Run a conversation between AI agents."""
     setup_logging()
@@ -277,11 +215,16 @@ def main() -> None:
     console = Console()
     console.clear()
 
+    logger.debug(f"Terminal color system: {console.color_system}")
+
     if console.color_system != "truecolor":
         console.print(
             "Warning: Your terminal does not support truecolor. Some colors may not display correctly.\n",
             style="bold yellow",
         )
+
+        terminal_color_mode = "256-color" if console.color_system == "256" else "16-color"
+        logger.warning(f"Terminal doesn't support truecolor. Falling back to {terminal_color_mode} mode.")
 
     agents: list[AIAgent]
     turn_order: TurnOrder
@@ -356,13 +299,16 @@ def main() -> None:
         moderator=moderator,
     )
 
-    # Get distinct colors for each agent. distinctipy.get_colors() returns floats between 0 and 1, so convert to 0-255
-    # by multiplying by 255. This is necessary because Rich expects color values in the 0-255 range.
+    # Get distinct colors for each agent.
     colors = distinctipy.get_colors(len(agents), pastel_factor=0.6)  # pyright: ignore[reportUnknownMemberType]
+    colors = [distinctipy.get_rgb256(color) for color in colors]  # pyright: ignore[reportUnknownMemberType]
     agent_name_color: dict[str, str] = {}
+
     for agent, (r, g, b) in zip(agents, colors):
-        rgb_values = (int(r * 255), int(g * 255), int(b * 255))
-        agent_name_color[agent.name] = get_compatible_color(console, *rgb_values)
+        logger.debug(f"Assigning 24-bit color {(r, g, b)} to agent '{agent.name}'")
+
+        agent_name_color[agent.name] = get_compatible_color(console, r, g, b)
+        logger.debug(f"Agent '{agent.name}' terminal-compatible color: {agent_name_color[agent.name]}")
 
     logger.info(f"Starting conversation with {len(agents)} agents")
     console.print("=== Conversation Started ===\n", style="bold cyan")

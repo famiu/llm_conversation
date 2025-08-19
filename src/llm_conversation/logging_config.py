@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 
+from rich.console import Console
 from rich.logging import RichHandler
 
 
@@ -36,6 +37,7 @@ def setup_logging() -> None:
 
     # Console output handler using Rich
     rich_handler = RichHandler(
+        console=Console(stderr=True),
         show_time=True,
         show_level=True,
         show_path=True,
