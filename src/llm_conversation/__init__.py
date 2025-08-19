@@ -6,7 +6,6 @@ from collections.abc import Iterator
 from importlib.metadata import version
 from pathlib import Path
 
-import distinctipy  # type: ignore[import-untyped] # pyright: ignore[reportMissingTypeStubs]
 from prompt_toolkit import prompt
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.validation import Validator
@@ -16,7 +15,7 @@ from rich.markdown import Markdown
 from rich.text import Text
 
 from .ai_agent import AIAgent
-from .color_conversion import rgb_to_ansi16, rgb_to_ansi256
+from .color import generate_distinct_colors, rgb_to_ansi16, rgb_to_ansi256
 from .config import AgentConfig, get_available_models, load_config
 from .conversation_manager import ConversationManager, TurnOrder
 from .logging_config import get_logger, setup_logging
@@ -300,8 +299,7 @@ def main() -> None:
     )
 
     # Get distinct colors for each agent.
-    colors = distinctipy.get_colors(len(agents), pastel_factor=0.6)  # pyright: ignore[reportUnknownMemberType]
-    colors = [distinctipy.get_rgb256(color) for color in colors]  # pyright: ignore[reportUnknownMemberType]
+    colors = generate_distinct_colors(len(agents), lightness=0.85, chroma=0.1)
     agent_name_color: dict[str, str] = {}
 
     for agent, (r, g, b) in zip(agents, colors):

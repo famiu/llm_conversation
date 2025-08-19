@@ -1,4 +1,4 @@
-"""Color conversion utilities for ANSI color palettes."""
+"""Color utilities for ANSI color palettes and distinct color generation."""
 
 import functools
 
@@ -128,3 +128,32 @@ def rgb_to_ansi256(c: RGB) -> int:
     # Find the nearest color in the color palette using the color distance function.
     nearest_color = min(range(len(palette)), key=lambda i: _color_distance(palette[i], c))
     return nearest_color
+
+
+def generate_distinct_colors(n_colors: int, lightness: float = 0.85, chroma: float = 0.1) -> list[RGB]:
+    """Generate visually distinct colors.
+
+    Args:
+        n_colors: Number of colors to generate
+        pastel_factor: 0.0 = vivid colors, 1.0 = very pastel colors
+
+    Returns:
+        List of RGB tuples with values 0-255
+    """
+    colors: list[RGB] = []
+
+    for i in range(n_colors):
+        # Distribute hues evenly around the color wheel
+        hue = (i * 360) // n_colors
+
+        # Create color in OkLCh space for perceptual uniformity
+        color = Color("oklch", [lightness, chroma, hue])
+
+        # Convert to sRGB and clamp to valid range
+        rgb_color = color.convert("srgb").clip()
+        rgb_coords = rgb_color.coords()
+
+        rgb256 = RGB(round(c * 255) for c in rgb_coords)
+        colors.append(rgb256)
+
+    return colors
