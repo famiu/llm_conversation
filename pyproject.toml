@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-conversation"
-description = "A tool for LLM agent conversations"
+description = "Tool to make LLM agents play characters and have conversations with each other."
 authors = [{ name = "Famiu Haque", email = "famiuhaque@proton.me" }]
 requires-python = ">=3.13,<4.0"
 readme = "README.md"
