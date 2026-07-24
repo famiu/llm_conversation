@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_placeholder: "@coderabbitai summary"
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+
+  path_filters:
+    - "!**/.venv/**"
+    - "!**/__pycache__/**"
+    - "!**/.ruff_cache/**"
+    - "!**/.mypy_cache/**"
+    - "!**/.pytest_cache/**"
+    - "!**/htmlcov/**"
+    - "!**/.coverage"
+    - "!build/**"
+    - "!dist/**"
+    - "!schema.json"
+
+  path_instructions:
+    - path: "src/llm_conversation/**/*.py"
+      instructions: |
+        Review for correctness on and preserve the documented CLI and configuration behavior.
+        Pay particular attention to:
+        - Precise type annotations and compatibility with the configured type checker.
+        - Pydantic validation, including invalid input, defaults, and cross-field invariants.
+        - Streaming and resource lifetimes, interruption handling, and terminal rendering.
+        - Specific exception handling that retains useful context without exposing API keys.
+        - Correct behavior across Ollama and other OpenAI-compatible providers.
+        - Google-style docstrings and documentation updates for user-visible changes.
+
+    - path: "scripts/**/*.py"
+      instructions: |
+        Ensure generated artifacts are deterministic and reproducible from source. Flag embedded
+        secrets, machine-specific assumptions, and output that can drift from the runtime models.
+
+    - path: "test.py"
+      instructions: &test_instructions |
+        Prefer behavior-focused tests that cover validation failures, provider selection, turn-order
+        behavior, streaming, interruption, and boundary cases. Flag brittle tests coupled to
+        implementation details and tests that require live external services when a deterministic
+        substitute is practical.
+
+    - path: "tests/**/*.py"
+      instructions: *test_instructions
+
+    - path: "{README.md,CONTRIBUTING.md}"
+      instructions: |
+        Check that commands, configuration examples, supported providers, Python requirements, and
+        development tools remain accurate and consistent with the implementation.
+
+    - path: "pyproject.toml"
+      instructions: |
+        Review supported Python versions, dependency bounds, package and build metadata, and
+        consistency between Ruff/type-checker configuration and documented development commands.
+
+  tools:
+    ruff:
+      enabled: true
+      config_file: "pyproject.toml"
+
+chat:
+  auto_reply: true
